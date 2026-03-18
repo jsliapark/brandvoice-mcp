@@ -1,0 +1,225 @@
+"""ChromaDB storage layer for writing samples and voice profiles.
+
+Uses ChromaDB's persistent client so everything lives on disk under the
+configured data directory. No external database service required.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+import chromadb
+from chromadb.config import Settings
+
+from brandvoice_mcp.config import Config
+
+WRITING_SAMPLES_COLLECTION = "writing_samples"
+VOICE_PROFILE_COLLECTION = "voice_profile"
+GUIDELINES_DOC_ID = "explicit_guidelines"
+LEARNED_STYLE_DOC_ID = "learned_style"
+
+
+class VoiceStore:
+    """Manages ChromaDB collections for brand-voice data."""
+
+    def __init__(self, config: Config) -> None:
+        self._config = config
+        self._client = chromadb.PersistentClient(
+            path=str(config.chromadb_dir),
+            settings=Settings(anonymized_telemetry=False),
+        )
+        self._samples = self._client.get_or_create_collection(
+            name=WRITING_SAMPLES_COLLECTION,
+            metadata={"hnsw:space": "cosine"},
+        )
+        self._profile = self._client.get_or_create_collection(
+            name=VOICE_PROFILE_COLLECTION,
+        )
+
+    # ── Writing samples ──────────────────────────────────────────
+
+    def add_samples(
+        self,
+        chunks: list[str],
+        embeddings: list[list[float]],
+        metadata: dict[str, Any],
+    ) -> list[str]:
+        """Store chunked writing samples with their embeddings.
+
+        Returns the list of generated IDs.
+        """
+        ids = [str(uuid.uuid4()) for _ in chunks]
+        now = datetime.now(timezone.utc).isoformat()
+        metadatas = [
+            {
+                "source": metadata.get("source", "other"),
+                "title": metadata.get("title", ""),
+                "url": metadata.get("url", ""),
+                "ingested_at": now,
+                **{
+                    k: v
+                    for k, v in metadata.get("style_markers", {}).items()
+                    if isinstance(v, (str, int, float, bool))
+                },
+            }
+            for _ in chunks
+        ]
+        self._samples.add(
+            ids=ids,
+            documents=chunks,
+            embeddings=embeddings,
+            metadatas=metadatas,
+        )
+        return ids
+
+    def query_samples(
+        self,
+        query_embedding: list[float],
+        top_k: int = 3,
+        source_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieve the most similar writing samples."""
+        where = {"source": source_filter} if source_filter else None
+        results = self._samples.query(
+            query_embeddings=[query_embedding],
+            n_results=min(top_k, self.total_samples or 1),
+            where=where,
+            include=["documents", "metadatas", "distances"],
+        )
+        samples: list[dict[str, Any]] = []
+        if not results["documents"] or not results["documents"][0]:
+            return samples
+
+        for doc, meta, dist in zip(
+            results["documents"][0],
+            results["metadatas"][0],
+            results["distances"][0],
+        ):
+            similarity = 1.0 - dist  # cosine distance → similarity
+            samples.append(
+                {
+                    "content": doc,
+                    "source": meta.get("source", "other"),
+                    "title": meta.get("title") or None,
+                    "similarity": round(max(0.0, min(1.0, similarity)), 4),
+                }
+            )
+        return samples
+
+    def list_samples(
+        self,
+        source: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """List stored samples with optional source filter.
+
+        Returns (samples, total_count).
+        """
+        where = {"source": source} if source else None
+        total = self._samples.count()
+
+        results = self._samples.get(
+            where=where,
+            limit=limit,
+            offset=offset,
+            include=["documents", "metadatas"],
+        )
+
+        entries: list[dict[str, Any]] = []
+        if results["ids"]:
+            for id_, doc, meta in zip(
+                results["ids"],
+                results["documents"],
+                results["metadatas"],
+            ):
+                entries.append(
+                    {
+                        "id": id_,
+                        "content_preview": (doc or "")[:200],
+                        "source": meta.get("source", "other"),
+                        "title": meta.get("title") or None,
+                        "ingested_at": meta.get("ingested_at"),
+                    }
+                )
+        return entries, total
+
+    @property
+    def total_samples(self) -> int:
+        return self._samples.count()
+
+    def sources_breakdown(self) -> dict[str, int]:
+        """Count samples per source type."""
+        results = self._samples.get(include=["metadatas"])
+        breakdown: dict[str, int] = {}
+        if results["metadatas"]:
+            for meta in results["metadatas"]:
+                src = meta.get("source", "other")
+                breakdown[src] = breakdown.get(src, 0) + 1
+        return breakdown
+
+    # ── Voice profile ────────────────────────────────────────────
+
+    def save_learned_style(self, style_data: dict[str, Any]) -> None:
+        """Persist the aggregate learned style profile."""
+        self._upsert_profile_doc(
+            LEARNED_STYLE_DOC_ID,
+            json.dumps(style_data, default=str),
+            {"type": "learned_style", "updated_at": datetime.now(timezone.utc).isoformat()},
+        )
+
+    def get_learned_style(self) -> dict[str, Any] | None:
+        """Retrieve the learned style profile."""
+        return self._get_profile_doc(LEARNED_STYLE_DOC_ID)
+
+    def save_guidelines(self, guidelines: dict[str, Any]) -> None:
+        """Persist explicit brand voice guidelines."""
+        self._upsert_profile_doc(
+            GUIDELINES_DOC_ID,
+            json.dumps(guidelines, default=str),
+            {"type": "guidelines", "updated_at": datetime.now(timezone.utc).isoformat()},
+        )
+
+    def get_guidelines(self) -> dict[str, Any] | None:
+        """Retrieve explicit guidelines."""
+        return self._get_profile_doc(GUIDELINES_DOC_ID)
+
+    def get_profile_last_updated(self) -> datetime | None:
+        """Get the most recent update timestamp from the profile collection."""
+        results = self._profile.get(include=["metadatas"])
+        if not results["metadatas"]:
+            return None
+
+        timestamps: list[str] = []
+        for meta in results["metadatas"]:
+            ts = meta.get("updated_at")
+            if ts:
+                timestamps.append(ts)
+        if not timestamps:
+            return None
+        latest = max(timestamps)
+        return datetime.fromisoformat(latest)
+
+    # ── Internal helpers ─────────────────────────────────────────
+
+    def _upsert_profile_doc(
+        self, doc_id: str, document: str, metadata: dict[str, Any]
+    ) -> None:
+        existing = self._profile.get(ids=[doc_id])
+        if existing["ids"]:
+            self._profile.update(ids=[doc_id], documents=[document], metadatas=[metadata])
+        else:
+            self._profile.add(ids=[doc_id], documents=[document], metadatas=[metadata])
+
+    def _get_profile_doc(self, doc_id: str) -> dict[str, Any] | None:
+        results = self._profile.get(ids=[doc_id], include=["documents"])
+        if not results["ids"]:
+            return None
+        raw = results["documents"][0]
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
