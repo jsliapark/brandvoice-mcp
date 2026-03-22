@@ -152,6 +152,20 @@ class VoiceStore:
     def total_samples(self) -> int:
         return self._samples.count()
 
+    def get_sample_snippets(
+        self,
+        limit: int = 3,
+        max_chars_per_sample: int = 1200,
+    ) -> list[str]:
+        """Return truncated full text of up to ``limit`` stored chunks for LLM context."""
+        results = self._samples.get(limit=limit, include=["documents"])
+        docs = results.get("documents") or []
+        out: list[str] = []
+        for d in docs:
+            if d:
+                out.append(d[:max_chars_per_sample])
+        return out
+
     def sources_breakdown(self) -> dict[str, int]:
         """Count samples per source type."""
         results = self._samples.get(include=["metadatas"])
@@ -255,6 +269,15 @@ class VoiceStore:
 
     async def sample_count_async(self) -> int:
         return await asyncio.to_thread(lambda: self.total_samples)
+
+    async def get_sample_snippets_async(
+        self,
+        limit: int = 3,
+        max_chars_per_sample: int = 1200,
+    ) -> list[str]:
+        return await asyncio.to_thread(
+            self.get_sample_snippets, limit, max_chars_per_sample
+        )
 
     async def get_learned_style_async(self) -> dict[str, Any] | None:
         return await asyncio.to_thread(self.get_learned_style)

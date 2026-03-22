@@ -118,9 +118,10 @@ def create_server() -> tuple[Server, Config, VoiceStore, EmbeddingService]:
     ) -> dict[str, Any]:
         """Check how well content matches your voice profile.
 
-        Returns a 0-100 alignment score with specific drift flags explaining
-        where the content diverges from your established style. Use this as a
-        quality gate before publishing.
+        Uses Claude with your stored style and sample snippets when configured;
+        falls back to fast heuristics if the API is unavailable. Returns a 0-100
+        alignment score with drift flags and rewrite hints. Use as a quality
+        gate before publishing.
         """
         result = await alignment_tool.check_alignment(
             content=content,

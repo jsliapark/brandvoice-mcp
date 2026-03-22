@@ -8,17 +8,17 @@ import pytest
 
 from brandvoice_mcp.analysis import style_analyzer
 from brandvoice_mcp.analysis.style_analyzer import (
-    _extract_json_object,
     _heuristic_style_snapshot,
     _normalize_snapshot,
     analyze_style,
 )
+from brandvoice_mcp.llm_json import extract_json_object
 from brandvoice_mcp.config import Config
 
 
 def test_extract_json_object_strips_fence() -> None:
     raw = '```json\n{"avg_sentence_length": 10.0, "vocabulary_richness": 0.5, "formality_score": 0.4, "dominant_tone": "conversational", "rhetorical_patterns": []}\n```'
-    data = _extract_json_object(raw)
+    data = extract_json_object(raw)
     assert data["avg_sentence_length"] == 10.0
 
 

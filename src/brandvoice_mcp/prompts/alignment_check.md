@@ -26,6 +26,8 @@ VOICE PROFILE:
 REFERENCE SAMPLES:
 {samples}
 
+TARGET PLATFORM (adjust expectations accordingly): {platform}
+
 CONTENT TO EVALUATE:
 {content}
 

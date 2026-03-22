@@ -1,18 +1,17 @@
 """LLM-based style analysis using Claude.
 
-Falls back to fast heuristics when ``analysis_model`` is ``"test`` (unit tests),
+Falls back to fast heuristics when ``analysis_model`` is ``"test"`` (unit tests),
 on API errors, or when JSON parsing fails.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 import anthropic
 
+from brandvoice_mcp.llm_json import extract_json_object
 from brandvoice_mcp.models import StyleSnapshot
 from brandvoice_mcp.prompts import load_prompt
 
@@ -31,15 +30,6 @@ _ALLOWED_TONES = frozenset(
         "inspirational",
     }
 )
-
-
-def _extract_json_object(text: str) -> dict[str, Any]:
-    """Parse JSON from model output; strip optional markdown fences."""
-    text = text.strip()
-    fence = re.match(r"^```(?:json)?\s*\n?(.*)\n?```\s*$", text, re.DOTALL)
-    if fence:
-        text = fence.group(1).strip()
-    return json.loads(text)
 
 
 def _normalize_snapshot(data: dict[str, Any]) -> StyleSnapshot:
@@ -123,7 +113,7 @@ async def _analyze_style_llm(content: str, config: Config) -> StyleSnapshot:
     if not raw:
         raise ValueError("Empty response from style analysis model")
 
-    data = _extract_json_object(raw)
+    data = extract_json_object(raw)
     return _normalize_snapshot(data)
 
 
