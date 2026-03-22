@@ -1,0 +1,13 @@
+Just shipped something I'm proud of: a CLI tool that runs 4 concurrent AI review passes on your git diffs before you push.
+
+It catches bugs I would have missed. Not theoretical bugs — actual logic errors in production code.
+
+The stack: Python, Claude API with structured outputs, ChromaDB for context.
+
+What I learned building it: structured outputs from LLMs are a game-changer. Instead of parsing free-form text, you get typed, validated responses every time.
+
+If you're building AI tools, stop treating LLM output as strings. Treat it as data.
+
+Link in comments. It's called preflight-ai and it's on PyPI.
+
+#AI #DeveloperTools #Python

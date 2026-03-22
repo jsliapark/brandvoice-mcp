@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "brandvoice": {
+      "command": "python",
+      "args": ["-m", "brandvoice_mcp"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-...",
+        "BRANDVOICE_DATA_DIR": "~/.brandvoice"
+      }
+    }
+  }
+}
