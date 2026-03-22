@@ -42,6 +42,11 @@ class Config:
     def profiles_dir(self) -> Path:
         return self.data_dir / "profiles"
 
+    @property
+    def profile_json_path(self) -> Path:
+        """Aggregate voice profile (learned style + guidelines) as JSON."""
+        return self.data_dir / "profile.json"
+
     def ensure_directories(self) -> None:
         """Create all required directories if they don't exist."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -61,8 +66,10 @@ def load_config() -> Config:
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise EnvironmentError(
-            "ANTHROPIC_API_KEY environment variable is required. "
-            "Set it in your shell or in your MCP client configuration."
+            "ANTHROPIC_API_KEY is required for brandvoice-mcp (LLM style analysis, "
+            "embeddings, and alignment). Set it in your environment or in the MCP "
+            "server config under 'env', e.g. "
+            '"env": { "ANTHROPIC_API_KEY": "sk-ant-..." }. See README for setup.'
         )
 
     raw_dir = os.environ.get("BRANDVOICE_DATA_DIR", "")

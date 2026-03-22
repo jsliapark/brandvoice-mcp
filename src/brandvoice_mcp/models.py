@@ -18,12 +18,19 @@ class ToneConfig(BaseModel):
     warmth: float = Field(ge=0, le=1, description="0=detached, 1=warm")
 
 
+StyleSource = Literal["llm", "heuristic"]
+
+
 class StyleSnapshot(BaseModel):
     avg_sentence_length: float
     vocabulary_richness: float = Field(ge=0, le=1)
     formality_score: float = Field(ge=0, le=1)
     dominant_tone: str
     rhetorical_patterns: list[str] = Field(default_factory=list)
+    profile_source: StyleSource = Field(
+        default="heuristic",
+        description="Whether metrics came from Claude (llm) or statistical fallback (heuristic).",
+    )
 
 
 # ── ingest_samples ───────────────────────────────────────────────────
@@ -37,6 +44,10 @@ class IngestResult(BaseModel):
     total_samples: int
     voice_profile_updated: bool
     style_snapshot: StyleSnapshot
+    analysis_note: str | None = Field(
+        default=None,
+        description="Optional note e.g. when sample was too short for LLM style analysis.",
+    )
 
 
 # ── get_voice_context ────────────────────────────────────────────────

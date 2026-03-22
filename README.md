@@ -2,19 +2,7 @@
 
 An MCP server that learns your writing style and makes every AI client sound like you.
 
-## The Problem
-
-AI-generated text sounds generic. Every time you use Claude Desktop, ChatGPT, or any AI writing tool, you have to manually describe your voice — or accept output that doesn't sound like you. Brand voice consistency requires pasting style guides into every conversation.
-
-**brandvoice-mcp** solves this. Connect it once, and your voice follows you across every MCP-compatible AI tool.
-
-## How It Works
-
-1. **Feed it your writing** — Blog posts, tweets, emails, docs. The more, the better.
-2. **It learns your style** — Sentence structure, vocabulary, tone, rhetorical patterns.
-3. **Every AI sounds like you** — Any MCP client calls `get_voice_context` and gets a ready-to-use style injection.
-
-## Quick Start
+## Quick start
 
 ### Install
 
@@ -24,7 +12,7 @@ pip install brandvoice-mcp
 
 ### Configure Claude Desktop
 
-Add to your Claude Desktop MCP config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+Add to your `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
@@ -33,82 +21,73 @@ Add to your Claude Desktop MCP config (`~/Library/Application Support/Claude/cla
       "command": "python",
       "args": ["-m", "brandvoice_mcp"],
       "env": {
-        "ANTHROPIC_API_KEY": "your-key-here"
+        "ANTHROPIC_API_KEY": "sk-ant-..."
       }
     }
   }
 }
 ```
 
-### Or use uvx (no install needed)
+Set `ANTHROPIC_API_KEY` in the `env` block (required). The server will exit with a clear error if the key is missing.
 
-```json
-{
-  "mcpServers": {
-    "brandvoice": {
-      "command": "uvx",
-      "args": ["brandvoice-mcp"],
-      "env": {
-        "ANTHROPIC_API_KEY": "your-key-here"
-      }
-    }
-  }
-}
-```
+### Teach it your voice
 
-### Teach It Your Voice
+In Claude Desktop, ask the model to use **`ingest_samples`** with real writing:
 
-In Claude Desktop, say:
+> Use the `ingest_samples` tool to learn my writing style from this blog post: [paste content]
 
-> "Use the ingest_samples tool to learn my writing style from this blog post: [paste your content]"
+The server chunks the text, stores embeddings in **ChromaDB**, and (for samples of about **50+ words**) runs **LLM style analysis**. Shorter snippets are still stored for retrieval but skip style analysis to avoid unreliable profiles.
 
-### Write in Your Voice
+### Write in your voice
 
-> "Use get_voice_context for a LinkedIn post about React performance, then write it in my voice."
+Before any writing task, call **`get_voice_context`** with your task and platform. The returned **`prompt_injection`** is wrapped in `<voice_context>...</voice_context>` — prepend it to your request or system prompt.
 
-## Tools
+> Use `get_voice_context` for a LinkedIn post about React performance, then write it in my voice.
+
+### Check alignment
+
+After drafting text, call **`check_alignment`** with the draft. You get a 0–100 score, drift flags, and rewrite hints against your stored profile and samples.
+
+> Use `check_alignment` on this draft: [paste text]
+
+## Tools reference
 
 | Tool | Description |
 |------|-------------|
-| `ingest_samples` | Feed writing samples to learn your voice |
-| `get_voice_context` | Get voice context + prompt injection for any writing task |
-| `set_guidelines` | Explicitly configure brand voice (pillars, tone, vocabulary) |
-| `check_alignment` | Score content against your voice profile (0-100) |
-| `get_profile` | View your complete voice profile |
-| `list_samples` | Browse ingested writing samples |
+| `ingest_samples` | Ingest writing; chunk, embed, and update style profile when thresholds are met |
+| `get_voice_context` | Voice guidelines, similar samples, and `prompt_injection` for a task |
+| `set_guidelines` | Merge explicit brand voice rules (pillars, tone, vocabulary, etc.) |
+| `check_alignment` | Score how well content matches your voice |
+| `get_profile` | Full profile: learned style (including `profile_source`), guidelines, counts |
+| `list_samples` | Paginated list of ingested samples |
+
+## How it works
+
+**Ingestion:** Text is split into chunks, embedded, and stored in a local **ChromaDB** collection (`writing_samples`) for similarity search. The aggregate **learned style** and **explicit guidelines** live in **`~/.brandvoice/profile.json`** (human-readable, separate from vectors) so a vector DB issue does not silently wipe your profile alongside embeddings.
+
+**Style analysis:** For sufficiently long samples, Claude analyzes tone and patterns. If the API fails, a **heuristic** fallback runs; `profile_source` on the snapshot records `"llm"` vs `"heuristic"`. Aggregate profile updates on ingest use **LLM-derived** snapshots only (after enough total stored samples).
+
+**Writing assistance:** For a task, the server retrieves your profile and the top similar chunks, then builds **`prompt_injection`** from markdown templates under `brandvoice_mcp/prompts/`.
 
 ## Configuration
 
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `ANTHROPIC_API_KEY` | (required) | Your Anthropic API key |
-| `BRANDVOICE_DATA_DIR` | `~/.brandvoice` | Where voice data is stored |
-| `BRANDVOICE_EMBEDDING_MODEL` | `voyage-3` | Embedding model |
-| `BRANDVOICE_ANALYSIS_MODEL` | `claude-sonnet-4-20250514` | LLM for style analysis |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | *(required)* | Anthropic API key (style analysis, alignment; embeddings if using API-backed models) |
+| `BRANDVOICE_DATA_DIR` | `~/.brandvoice` | Data directory (`profile.json`, Chroma persistence) |
+| `BRANDVOICE_EMBEDDING_MODEL` | `voyage-3` | Embedding model name |
+| `BRANDVOICE_ANALYSIS_MODEL` | `claude-sonnet-4-20250514` | Model for style analysis |
+| `BRANDVOICE_PROFILE_THRESHOLD` | `5` | Minimum stored samples before aggregate profile can update after an LLM-analyzed ingest |
 
-## Architecture
+## Limitations
 
-```
-┌──────────────────────────────────────────┐
-│  Any MCP Client                          │
-│  (Claude Desktop, Cursor, custom agents) │
-└──────────────┬───────────────────────────┘
-               │ MCP Protocol (stdio)
-┌──────────────▼───────────────────────────┐
-│  brandvoice-mcp server                   │
-│                                          │
-│  ┌─────────────┐  ┌──────────────────┐   │
-│  │ Style       │  │ Voice Profile    │   │
-│  │ Analyzer    │  │ Manager          │   │
-│  └──────┬──────┘  └────────┬─────────┘   │
-│         │                  │             │
-│  ┌──────▼──────────────────▼─────────┐   │
-│  │  ChromaDB (local, file-based)     │   │
-│  │  - writing_samples collection     │   │
-│  │  - voice_profile collection       │   │
-│  └───────────────────────────────────┘   │
-└──────────────────────────────────────────┘
-```
+- **Single client:** Designed for one MCP client at a time. Multiple clients sharing the same `~/.brandvoice` directory may hit SQLite/Chroma lock errors.
+- **API costs:** Style analysis and alignment use the Anthropic API. Each `ingest_samples` (long sample) and each `check_alignment` call consumes tokens; budget accordingly.
+
+## Requirements
+
+- Python **3.11+**
+- **Anthropic API key** (`ANTHROPIC_API_KEY`)
 
 ## Development
 
@@ -119,6 +98,18 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Architecture (overview)
+
+```
+MCP client (Claude Desktop, Cursor, …)
+        │ stdio
+        ▼
+  brandvoice-mcp server
+        │
+        ├── profile.json     ← aggregate learned style + explicit guidelines
+        └── ChromaDB         ← writing_samples (embeddings + chunks)
+```
+
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).

@@ -8,7 +8,7 @@ import pytest
 
 from brandvoice_mcp.analysis import style_analyzer
 from brandvoice_mcp.analysis.style_analyzer import (
-    _heuristic_style_snapshot,
+    heuristic_style_snapshot,
     _normalize_snapshot,
     analyze_style,
 )
@@ -36,6 +36,7 @@ def test_normalize_snapshot_clamps_tone() -> None:
     assert snap.vocabulary_richness == 1.0
     assert snap.formality_score == 0.0
     assert len(snap.rhetorical_patterns) == 5
+    assert snap.profile_source == "llm"
 
 
 @pytest.mark.asyncio
@@ -55,6 +56,7 @@ async def test_analyze_style_uses_heuristic_when_model_is_test(
     result = await analyze_style("Hello world. Second sentence here.", cfg)
     assert result.avg_sentence_length > 0
     assert result.dominant_tone == "conversational"
+    assert result.profile_source == "heuristic"
 
 
 @pytest.mark.asyncio
@@ -90,6 +92,7 @@ async def test_analyze_style_llm_path_parses_response(tmp_data_dir) -> None:
     assert result.avg_sentence_length == 14.2
     assert result.dominant_tone == "professional"
     assert "uses lists" in result.rhetorical_patterns
+    assert result.profile_source == "llm"
     mock_client.messages.create.assert_awaited_once()
 
 
@@ -119,10 +122,12 @@ async def test_analyze_style_falls_back_on_api_error(tmp_data_dir) -> None:
 
     assert result.dominant_tone == "conversational"
     assert result.avg_sentence_length > 0
+    assert result.profile_source == "heuristic"
 
 
 def test_heuristic_nonempty() -> None:
-    snap = _heuristic_style_snapshot(
+    snap = heuristic_style_snapshot(
         "Furthermore, we must leverage synergy. However, it is casual lol."
     )
     assert snap.formality_score >= 0.0
+    assert snap.profile_source == "heuristic"

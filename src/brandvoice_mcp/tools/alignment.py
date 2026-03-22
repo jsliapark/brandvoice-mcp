@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import anthropic
 
@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 _LLM_VERDICTS = frozenset(
     {"on_brand", "minor_drift", "significant_drift", "off_brand"}
 )
+
+# Verdict strings produced by the alignment LLM / heuristic paths (not "unknown").
+_LlmVerdict = Literal["on_brand", "minor_drift", "significant_drift", "off_brand"]
 
 
 def _voice_profile_text(
@@ -39,7 +42,11 @@ def _voice_profile_text(
 
 def _normalize_alignment_result(data: dict[str, Any]) -> AlignmentResult:
     raw_verdict = str(data.get("verdict", "minor_drift")).strip()
-    verdict: Any = raw_verdict if raw_verdict in _LLM_VERDICTS else "minor_drift"
+    verdict: _LlmVerdict = (
+        cast(_LlmVerdict, raw_verdict)
+        if raw_verdict in _LLM_VERDICTS
+        else "minor_drift"
+    )
 
     score = int(float(data.get("alignment_score", 50)))
     score = max(0, min(100, score))
@@ -186,8 +193,9 @@ def _check_alignment_heuristic(
 
     score = max(0, min(100, score))
 
+    verdict: _LlmVerdict
     if score >= 80:
-        verdict: Any = "on_brand"
+        verdict = "on_brand"
     elif score >= 60:
         verdict = "minor_drift"
     elif score >= 40:

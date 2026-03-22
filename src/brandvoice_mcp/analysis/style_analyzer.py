@@ -56,11 +56,12 @@ def _normalize_snapshot(data: dict[str, Any]) -> StyleSnapshot:
         formality_score=_f("formality_score", 0.5),
         dominant_tone=tone,
         rhetorical_patterns=patterns,
+        profile_source="llm",
     )
 
 
-def _heuristic_style_snapshot(content: str) -> StyleSnapshot:
-    """Statistical fallback when the LLM is unavailable or disabled."""
+def heuristic_style_snapshot(content: str) -> StyleSnapshot:
+    """Statistical fallback when the LLM is unavailable, disabled, or skipped."""
     words = content.split()
     sentences = [
         s.strip()
@@ -91,6 +92,7 @@ def _heuristic_style_snapshot(content: str) -> StyleSnapshot:
         formality_score=round(formality_score, 2),
         dominant_tone="conversational",
         rhetorical_patterns=[],
+        profile_source="heuristic",
     )
 
 
@@ -125,10 +127,10 @@ async def analyze_style(content: str, config: Config) -> StyleSnapshot:
     On API or parse errors, falls back to heuristics.
     """
     if not content.strip():
-        return _heuristic_style_snapshot(content)
+        return heuristic_style_snapshot(content)
 
     if config.analysis_model == "test":
-        return _heuristic_style_snapshot(content)
+        return heuristic_style_snapshot(content)
 
     try:
         return await _analyze_style_llm(content, config)
@@ -138,7 +140,7 @@ async def analyze_style(content: str, config: Config) -> StyleSnapshot:
             exc,
             exc_info=logger.isEnabledFor(logging.DEBUG),
         )
-        return _heuristic_style_snapshot(content)
+        return heuristic_style_snapshot(content)
 
 
 def chunk_content(

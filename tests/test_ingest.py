@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from brandvoice_mcp.config import Config
+from brandvoice_mcp.models import StyleSnapshot
 from brandvoice_mcp.storage.chromadb import VoiceStore
 from brandvoice_mcp.tools.ingest import ingest_samples
 from tests.conftest import FakeEmbeddingService, SAMPLE_BLOG_POST, SAMPLE_LINKEDIN_POST
@@ -33,19 +36,34 @@ async def test_ingest_triggers_profile_update(
     config: Config, store: VoiceStore, embedding_service: FakeEmbeddingService
 ) -> None:
     """Profile should update after reaching the threshold."""
-    for i in range(config.profile_reanalysis_threshold):
-        result = await ingest_samples(
-            content=f"Sample content number {i}. " * 20,
-            source="blog",
-            title=f"Post {i}",
-            url=None,
-            config=config,
-            store=store,
-            embeddings=embedding_service,
-        )
+    llm_snap = StyleSnapshot(
+        avg_sentence_length=12.0,
+        vocabulary_richness=0.5,
+        formality_score=0.5,
+        dominant_tone="conversational",
+        rhetorical_patterns=[],
+        profile_source="llm",
+    )
+    with patch(
+        "brandvoice_mcp.tools.ingest.analyze_style",
+        new_callable=AsyncMock,
+        return_value=llm_snap,
+    ):
+        for i in range(config.profile_reanalysis_threshold):
+            result = await ingest_samples(
+                content=f"Sample content number {i}. " * 20,
+                source="blog",
+                title=f"Post {i}",
+                url=None,
+                config=config,
+                store=store,
+                embeddings=embedding_service,
+            )
 
     assert result.voice_profile_updated is True
     assert store.get_learned_style() is not None
+    assert config.profile_json_path.exists()
+    assert store.get_learned_style()["profile_source"] == "llm"
 
 
 @pytest.mark.asyncio
@@ -90,3 +108,6 @@ async def test_ingest_short_content(
         embeddings=embedding_service,
     )
     assert result.samples_stored >= 1
+    assert result.analysis_note is not None
+    assert "too short" in result.analysis_note
+    assert result.style_snapshot.profile_source == "heuristic"
