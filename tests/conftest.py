@@ -43,8 +43,7 @@ def store(config: Config) -> VoiceStore:
     return VoiceStore(config)
 
 
-# TODO: Add a mock for anthropic.Anthropic client to test LLM-based code paths
-# (style analysis, alignment checking) without real API calls.
+# Style analysis LLM path is covered in tests/test_style_analyzer.py (AsyncAnthropic mock).
 class FakeEmbeddingService:
     """Deterministic embedding service for tests — no API calls."""
 
