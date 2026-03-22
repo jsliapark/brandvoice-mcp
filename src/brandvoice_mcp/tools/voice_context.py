@@ -30,13 +30,11 @@ async def get_voice_context(
     embeddings: EmbeddingService,
 ) -> VoiceContext:
     """Build full voice context for a writing task."""
-    if store.total_samples == 0:
-        return _empty_context(
-            "No writing samples found. Use ingest_samples to teach me your voice first."
-        )
+    if await store.sample_count_async() == 0:
+        return _empty_context(task)
 
-    learned = store.get_learned_style()
-    guidelines = store.get_guidelines() or {}
+    learned = await store.get_learned_style_async()
+    guidelines = (await store.get_guidelines_async()) or {}
 
     tone = _resolve_tone(learned, guidelines)
     voice_guidelines = _resolve_guidelines(learned, guidelines)
@@ -47,7 +45,7 @@ async def get_voice_context(
 
     task_embedding = await embeddings.embed_text(task)
     source_filter = _PLATFORM_SOURCE_MAP.get(platform)
-    raw_samples = store.query_samples(
+    raw_samples = await store.query_samples_async(
         query_embedding=task_embedding,
         top_k=top_k,
         source_filter=source_filter,
@@ -69,6 +67,7 @@ async def get_voice_context(
         similar_samples=similar_samples,
         vocabulary=vocabulary,
         platform=platform,
+        task=task,
     )
 
     return VoiceContext(
@@ -134,11 +133,24 @@ def _resolve_guidelines(learned: dict | None, guidelines: dict | None) -> str:
     return " ".join(parts) if parts else "Voice profile is still being built from your samples."
 
 
-def _empty_context(message: str) -> VoiceContext:
+def _empty_context(task: str) -> VoiceContext:
+    """Graceful degradation when no writing samples exist yet."""
+    neutral = ToneConfig(formality=0.5, humor=0.3, technical_depth=0.5, warmth=0.5)
+    guidelines_msg = (
+        "No voice profile exists yet. Ingest writing samples so the system can learn your style."
+    )
+    prompt_injection = (
+        "Write in a clear, natural tone. The user has not yet provided writing samples.\n\n"
+        "After you respond, suggest that they run the ingest_samples tool with examples of "
+        "their existing writing (blog posts, emails, social posts) so personalized voice "
+        "matching can be enabled.\n\n"
+        "CURRENT TASK:\n"
+        f"{task.strip() or '(No task description provided.)'}\n"
+    )
     return VoiceContext(
-        voice_guidelines=message,
-        tone_profile=ToneConfig(formality=0.5, humor=0.3, technical_depth=0.5, warmth=0.5),
+        voice_guidelines=guidelines_msg,
+        tone_profile=neutral,
         similar_samples=[],
         vocabulary={"preferred": [], "avoided": []},
-        prompt_injection=message,
+        prompt_injection=prompt_injection,
     )

@@ -10,15 +10,15 @@ from brandvoice_mcp.tools.alignment import check_alignment
 
 
 @pytest.mark.asyncio
-async def test_no_profile_returns_zero(config: Config, store: VoiceStore) -> None:
+async def test_no_profile_returns_unknown(config: Config, store: VoiceStore) -> None:
     result = await check_alignment(
         content="Some content to check.",
         platform="general",
         config=config,
         store=store,
     )
-    assert result.alignment_score == 0
-    assert result.verdict == "off_brand"
+    assert result.alignment_score == 50
+    assert result.verdict == "unknown"
     assert len(result.drift_flags) > 0
 
 

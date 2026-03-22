@@ -79,7 +79,13 @@ class DriftFlag(BaseModel):
 
 class AlignmentResult(BaseModel):
     alignment_score: int = Field(ge=0, le=100)
-    verdict: Literal["on_brand", "minor_drift", "significant_drift", "off_brand"]
+    verdict: Literal[
+        "on_brand",
+        "minor_drift",
+        "significant_drift",
+        "off_brand",
+        "unknown",
+    ]
     drift_flags: list[DriftFlag]
     suggestions: list[str]
     rewrite_hints: str

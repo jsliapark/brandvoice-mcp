@@ -24,6 +24,20 @@ _PLATFORM_HINTS = {
 }
 
 
+_MAX_SAMPLE_CHARS = 500
+
+
+def _truncate_sample_text(text: str, max_chars: int = _MAX_SAMPLE_CHARS) -> str:
+    """Keep sample snippets short for MCP context limits; end at last sentence if possible."""
+    if len(text) <= max_chars:
+        return text
+    chunk = text[:max_chars]
+    last_period = chunk.rfind(".")
+    if last_period > max_chars // 4:
+        return chunk[: last_period + 1]
+    return chunk.rstrip() + "…"
+
+
 # TODO: Iterate on prompt_injection format with real LLM clients.
 # Edit prompts/voice_injection.md and test with Claude Desktop, Cursor,
 # and GPT to ensure the format actually changes voice output.
@@ -33,6 +47,7 @@ def build_prompt_injection(
     similar_samples: list[VoiceSample],
     vocabulary: dict[str, list[str]],
     platform: str = "general",
+    task: str = "",
 ) -> str:
     """Assemble the prompt_injection string.
 
@@ -75,9 +90,11 @@ def build_prompt_injection(
             sample_lines.append("---")
             if sample.title:
                 sample_lines.append(f"[{sample.source}] {sample.title}")
-            sample_lines.append(sample.content)
+            sample_lines.append(_truncate_sample_text(sample.content))
         sample_lines.append("---")
     samples_section = "\n".join(sample_lines)
+
+    task_text = task.strip() or "(No specific task description provided.)"
 
     result = template.format(
         voice_guidelines=voice_guidelines or "No specific guidelines set yet.",
@@ -85,6 +102,7 @@ def build_prompt_injection(
         vocabulary_section=vocabulary_section,
         platform_section=platform_section,
         samples_section=samples_section,
+        task=task_text,
     )
 
     return re.sub(r"\n{3,}", "\n\n", result).strip()

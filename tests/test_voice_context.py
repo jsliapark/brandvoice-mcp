@@ -28,7 +28,8 @@ async def test_empty_profile_returns_message(
         store=store,
         embeddings=embedding_service,
     )
-    assert "No writing samples" in result.voice_guidelines
+    assert "No voice profile exists yet" in result.voice_guidelines
+    assert "ingest_samples" in result.prompt_injection
     assert result.similar_samples == []
 
 
@@ -91,3 +92,4 @@ async def test_prompt_injection_contains_guidelines(
     )
     assert "practical over theoretical" in result.prompt_injection
     assert "ship" in result.prompt_injection
+    assert "CURRENT TASK:" in result.prompt_injection

@@ -19,7 +19,9 @@ async def list_samples(
     offset: int = 0,
 ) -> SamplesList:
     """List stored writing samples with optional filtering."""
-    entries_raw, total = store.list_samples(source=source, limit=limit, offset=offset)
+    entries_raw, total = await store.list_samples_async(
+        source=source, limit=limit, offset=offset
+    )
 
     samples = [
         SampleEntry(

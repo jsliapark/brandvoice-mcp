@@ -27,22 +27,26 @@ async def check_alignment(
     Currently uses heuristic comparison. Will be upgraded to LLM-based
     evaluation in a later phase.
     """
-    learned = store.get_learned_style()
-    guidelines = store.get_guidelines()
+    learned = await store.get_learned_style_async()
+    guidelines = await store.get_guidelines_async()
+    total_samples = await store.sample_count_async()
 
-    if not learned and not guidelines:
+    # Nothing to compare against: no ingested samples and no stored style/guidelines.
+    if total_samples == 0 and not learned and not guidelines:
         return AlignmentResult(
-            alignment_score=0,
-            verdict="off_brand",
+            alignment_score=50,
+            verdict="unknown",
             drift_flags=[
                 DriftFlag(
                     category="profile",
-                    issue="No voice profile exists yet. Ingest writing samples first.",
-                    severity="high",
+                    issue="No voice profile exists yet — cannot assess alignment. Ingest writing samples first.",
+                    severity="medium",
                 )
             ],
-            suggestions=["Use ingest_samples to teach the system your voice before checking alignment."],
-            rewrite_hints="Cannot evaluate alignment without a voice profile.",
+            suggestions=[
+                "Use ingest_samples to teach the system your writing style before checking alignment."
+            ],
+            rewrite_hints="",
         )
 
     drift_flags: list[DriftFlag] = []
