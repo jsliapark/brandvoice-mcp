@@ -12,11 +12,11 @@ if TYPE_CHECKING:
 
 async def get_profile(*, store: VoiceStore) -> VoiceProfile:
     """Assemble and return the full voice profile."""
-    learned_raw = store.get_learned_style()
-    guidelines = store.get_guidelines()
-    total = store.total_samples
-    breakdown = store.sources_breakdown()
-    last_updated = store.get_profile_last_updated()
+    learned_raw = await store.get_learned_style_async()
+    guidelines = await store.get_guidelines_async()
+    total = await store.sample_count_async()
+    breakdown = await store.sources_breakdown_async()
+    last_updated = await store.get_profile_last_updated_async()
 
     learned_style = None
     if learned_raw:

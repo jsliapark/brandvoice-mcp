@@ -42,7 +42,7 @@ async def ingest_samples(
         "formality_score": style.formality_score,
         "dominant_tone": style.dominant_tone,
     }
-    store.add_samples(
+    await store.add_samples_async(
         chunks=chunks,
         embeddings=vectors,
         metadata={
@@ -53,14 +53,14 @@ async def ingest_samples(
         },
     )
 
-    total = store.total_samples
+    total = await store.sample_count_async()
     profile_updated = False
 
     # TODO: Aggregate profile re-analysis. Currently saves the latest single-sample
     # analysis. Should pull ALL stored samples and build a comprehensive voice
     # profile via Claude, merging patterns across the full corpus.
     if total >= config.profile_reanalysis_threshold:
-        store.save_learned_style(style.model_dump())
+        await store.save_learned_style_async(style.model_dump())
         profile_updated = True
 
     return IngestResult(

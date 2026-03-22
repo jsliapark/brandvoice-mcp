@@ -21,7 +21,7 @@ async def set_guidelines(
     custom_instructions: str | None = None,
 ) -> GuidelinesResult:
     """Update explicit brand voice guidelines (merge semantics)."""
-    existing = store.get_guidelines() or {}
+    existing = (await store.get_guidelines_async()) or {}
     updated_fields: list[str] = []
 
     field_map: dict[str, Any] = {
@@ -38,7 +38,7 @@ async def set_guidelines(
             existing[field_name] = value
             updated_fields.append(field_name)
 
-    store.save_guidelines(existing)
+    await store.save_guidelines_async(existing)
 
     return GuidelinesResult(
         updated_fields=updated_fields,

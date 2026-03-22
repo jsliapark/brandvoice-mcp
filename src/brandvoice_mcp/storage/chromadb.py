@@ -6,6 +6,7 @@ configured data directory. No external database service required.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
@@ -223,3 +224,52 @@ class VoiceStore:
             return json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             return None
+
+    # ── Async wrappers (Chroma sync I/O off the event loop) ─────────────
+
+    async def add_samples_async(
+        self,
+        chunks: list[str],
+        embeddings: list[list[float]],
+        metadata: dict[str, Any],
+    ) -> list[str]:
+        return await asyncio.to_thread(self.add_samples, chunks, embeddings, metadata)
+
+    async def query_samples_async(
+        self,
+        query_embedding: list[float],
+        top_k: int = 3,
+        source_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(
+            self.query_samples, query_embedding, top_k, source_filter
+        )
+
+    async def list_samples_async(
+        self,
+        source: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        return await asyncio.to_thread(self.list_samples, source, limit, offset)
+
+    async def sample_count_async(self) -> int:
+        return await asyncio.to_thread(lambda: self.total_samples)
+
+    async def get_learned_style_async(self) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self.get_learned_style)
+
+    async def save_learned_style_async(self, style_data: dict[str, Any]) -> None:
+        await asyncio.to_thread(self.save_learned_style, style_data)
+
+    async def get_guidelines_async(self) -> dict[str, Any] | None:
+        return await asyncio.to_thread(self.get_guidelines)
+
+    async def save_guidelines_async(self, guidelines: dict[str, Any]) -> None:
+        await asyncio.to_thread(self.save_guidelines, guidelines)
+
+    async def sources_breakdown_async(self) -> dict[str, int]:
+        return await asyncio.to_thread(self.sources_breakdown)
+
+    async def get_profile_last_updated_async(self) -> datetime | None:
+        return await asyncio.to_thread(self.get_profile_last_updated)

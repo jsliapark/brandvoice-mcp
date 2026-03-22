@@ -1,7 +1,6 @@
-"""Embedding generation via the Anthropic Voyager API.
+"""Embedding generation via the Anthropic Embeddings API.
 
-Falls back to a simple hash-based embedding for testing when no API key
-is available (test mode only).
+Uses ``anthropic.AsyncAnthropic`` so HTTP calls do not block the asyncio event loop.
 """
 
 from __future__ import annotations
@@ -16,27 +15,23 @@ if TYPE_CHECKING:
     from brandvoice_mcp.config import Config
 
 
-# TODO: Verify this works end-to-end with voyage-3 via Anthropic's API.
-# The current implementation uses the sync Anthropic client inside async methods.
-# Consider switching to anthropic.AsyncAnthropic for proper async I/O,
-# or run sync calls in a thread executor.
 class EmbeddingService:
     """Generate text embeddings for similarity search."""
 
     def __init__(self, config: Config) -> None:
         self._config = config
-        self._client = anthropic.Anthropic(api_key=config.anthropic_api_key)
+        self._client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
         self._model = config.embedding_model
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for a batch of texts.
 
-        Uses the Voyage embedding model via Anthropic's API.
+        Uses the configured embedding model via Anthropic's Embeddings API.
         """
         if not texts:
             return []
 
-        response = self._client.embeddings.create(
+        response = await self._client.embeddings.create(
             model=self._model,
             input=texts,
         )
