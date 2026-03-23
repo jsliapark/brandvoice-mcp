@@ -105,7 +105,8 @@ def build_prompt_injection(
         task=task_text,
     )
 
-    return re.sub(r"\n{3,}", "\n\n", result).strip()
+    inner = re.sub(r"\n{3,}", "\n\n", result).strip()
+    return f"<voice_context>\n{inner}\n</voice_context>"
 
 
 def _score_label(score: float) -> str:

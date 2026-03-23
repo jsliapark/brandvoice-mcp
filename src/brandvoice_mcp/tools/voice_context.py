@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from brandvoice_mcp.analysis.prompt_builder import build_prompt_injection
@@ -19,6 +20,10 @@ _PLATFORM_SOURCE_MAP = {
     "email": "email",
 }
 
+_MAX_TOP_K = 5
+
+logger = logging.getLogger(__name__)
+
 
 async def get_voice_context(
     task: str,
@@ -30,6 +35,18 @@ async def get_voice_context(
     embeddings: EmbeddingService,
 ) -> VoiceContext:
     """Build full voice context for a writing task."""
+    requested = top_k
+    if top_k < 1:
+        top_k = 1
+        logger.info("top_k=%s is below 1; using 1", requested)
+    elif top_k > _MAX_TOP_K:
+        top_k = _MAX_TOP_K
+        logger.info(
+            "top_k=%s exceeds maximum %s; clamping to avoid oversized prompt_injection",
+            requested,
+            _MAX_TOP_K,
+        )
+
     if await store.sample_count_async() == 0:
         return _empty_context(task)
 
@@ -139,7 +156,7 @@ def _empty_context(task: str) -> VoiceContext:
     guidelines_msg = (
         "No voice profile exists yet. Ingest writing samples so the system can learn your style."
     )
-    prompt_injection = (
+    inner = (
         "Write in a clear, natural tone. The user has not yet provided writing samples.\n\n"
         "After you respond, suggest that they run the ingest_samples tool with examples of "
         "their existing writing (blog posts, emails, social posts) so personalized voice "
@@ -147,6 +164,7 @@ def _empty_context(task: str) -> VoiceContext:
         "CURRENT TASK:\n"
         f"{task.strip() or '(No task description provided.)'}\n"
     )
+    prompt_injection = f"<voice_context>\n{inner}\n</voice_context>"
     return VoiceContext(
         voice_guidelines=guidelines_msg,
         tone_profile=neutral,

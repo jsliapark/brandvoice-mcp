@@ -26,6 +26,7 @@ async def get_profile(*, store: VoiceStore) -> VoiceProfile:
             formality_score=learned_raw.get("formality_score", 0.5),
             dominant_tone=learned_raw.get("dominant_tone", "unknown"),
             rhetorical_patterns=learned_raw.get("rhetorical_patterns", []),
+            profile_source=learned_raw.get("profile_source", "heuristic"),
         )
 
     parts: list[str] = []

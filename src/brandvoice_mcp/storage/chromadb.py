@@ -16,6 +16,7 @@ import chromadb
 from chromadb.config import Settings
 
 from brandvoice_mcp.config import Config
+from brandvoice_mcp.storage.profile_json import load_profile_state, save_profile_state
 
 WRITING_SAMPLES_COLLECTION = "writing_samples"
 VOICE_PROFILE_COLLECTION = "voice_profile"
@@ -28,6 +29,7 @@ class VoiceStore:
 
     def __init__(self, config: Config) -> None:
         self._config = config
+        self._profile_json_path = config.profile_json_path
         self._client = chromadb.PersistentClient(
             path=str(config.chromadb_dir),
             settings=Settings(anonymized_telemetry=False),
@@ -152,6 +154,20 @@ class VoiceStore:
     def total_samples(self) -> int:
         return self._samples.count()
 
+    def get_sample_snippets(
+        self,
+        limit: int = 3,
+        max_chars_per_sample: int = 1200,
+    ) -> list[str]:
+        """Return truncated full text of up to ``limit`` stored chunks for LLM context."""
+        results = self._samples.get(limit=limit, include=["documents"])
+        docs = results.get("documents") or []
+        out: list[str] = []
+        for doc in docs:
+            if doc:
+                out.append(doc[:max_chars_per_sample])
+        return out
+
     def sources_breakdown(self) -> dict[str, int]:
         """Count samples per source type."""
         results = self._samples.get(include=["metadatas"])
@@ -162,47 +178,61 @@ class VoiceStore:
                 breakdown[src] = breakdown.get(src, 0) + 1
         return breakdown
 
-    # ── Voice profile ────────────────────────────────────────────
+    # ── Voice profile (profile.json; Chroma collection only for legacy migration) ─
+
+    def _ensure_profile_file_from_legacy_chroma(self) -> None:
+        """If ``profile.json`` is missing, migrate learned style + guidelines from Chroma."""
+        if self._profile_json_path.exists():
+            return
+        learned = self._get_profile_doc(LEARNED_STYLE_DOC_ID)
+        guidelines = self._get_profile_doc(GUIDELINES_DOC_ID)
+        if not learned and not guidelines:
+            return
+        save_profile_state(
+            self._profile_json_path,
+            {
+                "learned_style": learned,
+                "explicit_guidelines": guidelines,
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    def _load_profile_state(self) -> dict[str, Any]:
+        self._ensure_profile_file_from_legacy_chroma()
+        return load_profile_state(self._profile_json_path)
 
     def save_learned_style(self, style_data: dict[str, Any]) -> None:
-        """Persist the aggregate learned style profile."""
-        self._upsert_profile_doc(
-            LEARNED_STYLE_DOC_ID,
-            json.dumps(style_data, default=str),
-            {"type": "learned_style", "updated_at": datetime.now(timezone.utc).isoformat()},
-        )
+        """Persist the aggregate learned style profile to ``profile.json``."""
+        state = self._load_profile_state()
+        state["learned_style"] = style_data
+        state["last_updated"] = datetime.now(timezone.utc).isoformat()
+        save_profile_state(self._profile_json_path, state)
 
     def get_learned_style(self) -> dict[str, Any] | None:
-        """Retrieve the learned style profile."""
-        return self._get_profile_doc(LEARNED_STYLE_DOC_ID)
+        """Retrieve the learned style profile from ``profile.json``."""
+        return self._load_profile_state().get("learned_style")
 
     def save_guidelines(self, guidelines: dict[str, Any]) -> None:
-        """Persist explicit brand voice guidelines."""
-        self._upsert_profile_doc(
-            GUIDELINES_DOC_ID,
-            json.dumps(guidelines, default=str),
-            {"type": "guidelines", "updated_at": datetime.now(timezone.utc).isoformat()},
-        )
+        """Persist explicit brand voice guidelines to ``profile.json``."""
+        state = self._load_profile_state()
+        state["explicit_guidelines"] = guidelines
+        state["last_updated"] = datetime.now(timezone.utc).isoformat()
+        save_profile_state(self._profile_json_path, state)
 
     def get_guidelines(self) -> dict[str, Any] | None:
-        """Retrieve explicit guidelines."""
-        return self._get_profile_doc(GUIDELINES_DOC_ID)
+        """Retrieve explicit guidelines from ``profile.json``."""
+        g = self._load_profile_state().get("explicit_guidelines")
+        return g if g else None
 
     def get_profile_last_updated(self) -> datetime | None:
-        """Get the most recent update timestamp from the profile collection."""
-        results = self._profile.get(include=["metadatas"])
-        if not results["metadatas"]:
+        """Last time profile.json was updated."""
+        raw = self._load_profile_state().get("last_updated")
+        if not raw:
             return None
-
-        timestamps: list[str] = []
-        for meta in results["metadatas"]:
-            ts = meta.get("updated_at")
-            if ts:
-                timestamps.append(ts)
-        if not timestamps:
+        try:
+            return datetime.fromisoformat(str(raw))
+        except (TypeError, ValueError):
             return None
-        latest = max(timestamps)
-        return datetime.fromisoformat(latest)
 
     # ── Internal helpers ─────────────────────────────────────────
 
@@ -255,6 +285,15 @@ class VoiceStore:
 
     async def sample_count_async(self) -> int:
         return await asyncio.to_thread(lambda: self.total_samples)
+
+    async def get_sample_snippets_async(
+        self,
+        limit: int = 3,
+        max_chars_per_sample: int = 1200,
+    ) -> list[str]:
+        return await asyncio.to_thread(
+            self.get_sample_snippets, limit, max_chars_per_sample
+        )
 
     async def get_learned_style_async(self) -> dict[str, Any] | None:
         return await asyncio.to_thread(self.get_learned_style)

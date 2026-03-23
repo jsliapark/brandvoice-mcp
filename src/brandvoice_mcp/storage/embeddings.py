@@ -1,6 +1,9 @@
-"""Embedding generation via the Anthropic Embeddings API.
+"""Embedding generation via the OpenAI Embeddings API.
 
-Uses ``anthropic.AsyncAnthropic`` so HTTP calls do not block the asyncio event loop.
+Anthropic does not expose a text-embeddings endpoint in the public SDK; we use
+OpenAI (default: ``text-embedding-3-small``) for chunk vectors used in ChromaDB.
+
+When ``embedding_model`` is ``\"test\"``, uses deterministic hash vectors (tests only).
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ import hashlib
 import struct
 from typing import TYPE_CHECKING
 
-import anthropic
+from openai import AsyncOpenAI
 
 if TYPE_CHECKING:
     from brandvoice_mcp.config import Config
@@ -19,18 +22,26 @@ class EmbeddingService:
     """Generate text embeddings for similarity search."""
 
     def __init__(self, config: Config) -> None:
-        self._config = config
-        self._client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
         self._model = config.embedding_model
+        if self._model == "test":
+            self._client = None
+        else:
+            key = config.openai_api_key
+            if not key:
+                raise EnvironmentError(
+                    "OPENAI_API_KEY is required when embedding_model is not 'test'."
+                )
+            self._client = AsyncOpenAI(api_key=key)
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings for a batch of texts.
-
-        Uses the configured embedding model via Anthropic's Embeddings API.
-        """
+        """Generate embeddings for a batch of texts."""
         if not texts:
             return []
 
+        if self._model == "test":
+            return [deterministic_embedding(t) for t in texts]
+
+        assert self._client is not None
         response = await self._client.embeddings.create(
             model=self._model,
             input=texts,
