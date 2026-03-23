@@ -5,8 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from mcp.server import FastMCP
 
 from brandvoice_mcp.config import Config, load_config
 from brandvoice_mcp.storage.chromadb import VoiceStore
@@ -23,14 +22,14 @@ from brandvoice_mcp.tools import (
 logger = logging.getLogger("brandvoice-mcp")
 
 
-def create_server() -> tuple[Server, Config, VoiceStore, EmbeddingService]:
+def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
     """Create and configure the MCP server with all tools registered."""
     config = load_config()
     store = VoiceStore(config)
     embedding_service = EmbeddingService(config)
-    server = Server("brandvoice-mcp")
+    mcp = FastMCP("brandvoice-mcp")
 
-    @server.tool()
+    @mcp.tool()
     async def ingest_samples(
         content: str,
         source: Literal["blog", "social", "email", "doc", "other"] = "other",
@@ -58,7 +57,7 @@ def create_server() -> tuple[Server, Config, VoiceStore, EmbeddingService]:
         )
         return result.model_dump()
 
-    @server.tool()
+    @mcp.tool()
     async def get_voice_context(
         task: str,
         platform: Literal["blog", "linkedin", "twitter", "email", "general"] = "general",
@@ -83,7 +82,7 @@ def create_server() -> tuple[Server, Config, VoiceStore, EmbeddingService]:
         )
         return result.model_dump()
 
-    @server.tool()
+    @mcp.tool()
     async def set_guidelines(
         pillars: list[str] | None = None,
         tone: dict[str, float] | None = None,
@@ -111,7 +110,7 @@ def create_server() -> tuple[Server, Config, VoiceStore, EmbeddingService]:
         )
         return result.model_dump()
 
-    @server.tool()
+    @mcp.tool()
     async def check_alignment(
         content: str,
         platform: Literal["blog", "linkedin", "twitter", "email", "general"] = "general",
@@ -131,7 +130,7 @@ def create_server() -> tuple[Server, Config, VoiceStore, EmbeddingService]:
         )
         return result.model_dump()
 
-    @server.tool()
+    @mcp.tool()
     async def get_profile() -> dict[str, Any]:
         """Get your complete voice profile.
 
@@ -142,7 +141,7 @@ def create_server() -> tuple[Server, Config, VoiceStore, EmbeddingService]:
         result = await profile_tool.get_profile(store=store)
         return result.model_dump(mode="json")
 
-    @server.tool()
+    @mcp.tool()
     async def list_samples(
         source: str | None = None,
         limit: int = 20,
@@ -161,20 +160,14 @@ def create_server() -> tuple[Server, Config, VoiceStore, EmbeddingService]:
         )
         return result.model_dump(mode="json")
 
-    return server, config, store, embedding_service
+    return mcp, config, store, embedding_service
 
 
 # TODO: Add error handling for MCP protocol edge cases — large response
 # payloads, serialization of datetime/complex types, and timeout handling.
 # Test by running through Claude Desktop and Cursor with real content.
-async def run_server() -> None:
+def run_server() -> None:
     """Start the MCP server over stdio."""
-    server, config, _store, _embeddings = create_server()
+    mcp, config, _store, _embeddings = create_server()
     logger.info("brandvoice-mcp server starting (data_dir=%s)", config.data_dir)
-
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+    mcp.run(transport="stdio")

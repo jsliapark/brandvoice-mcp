@@ -165,7 +165,7 @@ class VoiceStore:
         out: list[str] = []
         for doc in docs:
             if doc:
-                out.append(d[:max_chars_per_sample])
+                out.append(doc[:max_chars_per_sample])
         return out
 
     def sources_breakdown(self) -> dict[str, int]:
