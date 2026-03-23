@@ -1,9 +1,4 @@
-"""Tests for the get_voice_context tool.
-
-TODO: Add tests/test_integration.py — full MCP protocol integration tests
-that spin up the server programmatically, connect with an MCP client, and
-run the full flow: ingest → set_guidelines → get_voice_context → check_alignment.
-"""
+"""Tests for the get_voice_context tool."""
 
 from __future__ import annotations
 

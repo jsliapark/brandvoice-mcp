@@ -38,9 +38,6 @@ def _truncate_sample_text(text: str, max_chars: int = _MAX_SAMPLE_CHARS) -> str:
     return chunk.rstrip() + "…"
 
 
-# TODO: Iterate on prompt_injection format with real LLM clients.
-# Edit prompts/voice_injection.md and test with Claude Desktop, Cursor,
-# and GPT to ensure the format actually changes voice output.
 def build_prompt_injection(
     voice_guidelines: str,
     tone: ToneConfig,

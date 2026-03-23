@@ -25,6 +25,12 @@ class StyleSnapshot(BaseModel):
     avg_sentence_length: float
     vocabulary_richness: float = Field(ge=0, le=1)
     formality_score: float = Field(ge=0, le=1)
+    #: 0 = serious, 1 = humorous (from LLM analysis or heuristics).
+    humor: float = Field(default=0.5, ge=0, le=1)
+    #: 0 = beginner-friendly, 1 = expert / dense (from LLM analysis or heuristics).
+    technical_depth: float = Field(default=0.5, ge=0, le=1)
+    #: 0 = detached, 1 = warm / personal (from LLM analysis or heuristics).
+    warmth: float = Field(default=0.5, ge=0, le=1)
     dominant_tone: str
     rhetorical_patterns: list[str] = Field(default_factory=list)
     profile_source: StyleSource = Field(

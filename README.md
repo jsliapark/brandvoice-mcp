@@ -66,7 +66,7 @@ After drafting text, call **`check_alignment`** with the draft. You get a 0–10
 
 **Ingestion:** Text is split into chunks, embedded with **OpenAI** (default `text-embedding-3-small`), and stored in a local **ChromaDB** collection (`writing_samples`) for similarity search. The aggregate **learned style** and **explicit guidelines** live in **`~/.brandvoice/profile.json`** (human-readable, separate from vectors) so a vector DB issue does not silently wipe your profile alongside embeddings.
 
-**Style analysis:** For sufficiently long samples, Claude analyzes tone and patterns. If the API fails, a **heuristic** fallback runs; `profile_source` on the snapshot records `"llm"` vs `"heuristic"`. Aggregate profile updates on ingest use **LLM-derived** snapshots only (after enough total stored samples).
+**Style analysis:** For sufficiently long samples, Claude analyzes tone and patterns (including humor, technical depth, and warmth scores used in `get_voice_context`). If the API fails, a **heuristic** fallback runs; `profile_source` records `"llm"` vs `"heuristic"`. After enough stored chunks (see `BRANDVOICE_PROFILE_THRESHOLD`), each qualifying ingest **re-merges the corpus** via Claude (`prompts/corpus_aggregate.md`) into a single aggregate profile; on failure, the latest per-sample LLM snapshot is used when available.
 
 **Writing assistance:** For a task, the server retrieves your profile and the top similar chunks, then builds **`prompt_injection`** from markdown templates under `brandvoice_mcp/prompts/`.
 
