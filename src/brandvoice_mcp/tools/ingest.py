@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from brandvoice_mcp.analysis.style_analyzer import (
+    aggregate_style_from_corpus,
     analyze_style,
     chunk_content,
     heuristic_style_snapshot,
 )
-from brandvoice_mcp.models import IngestResult
+from brandvoice_mcp.models import IngestResult, StyleSnapshot
+
+logger = logging.getLogger(__name__)
 
 # Minimum word count for LLM style analysis (below this: heuristic only, no API call).
 _MIN_STYLE_ANALYSIS_WORDS = 50
@@ -18,6 +22,45 @@ if TYPE_CHECKING:
     from brandvoice_mcp.config import Config
     from brandvoice_mcp.storage.chromadb import VoiceStore
     from brandvoice_mcp.storage.embeddings import EmbeddingService
+
+
+async def _maybe_update_aggregate_profile(
+    *,
+    total_samples: int,
+    config: Config,
+    store: VoiceStore,
+    style: StyleSnapshot,
+) -> bool:
+    """Persist learned style when sample count crosses the reanalysis threshold.
+
+    Production runs merge stored chunks via Claude; test mode saves the latest
+    LLM-derived ingest snapshot only. Returns whether ``profile.json`` was written.
+    """
+    if total_samples < config.profile_reanalysis_threshold:
+        return False
+
+    if config.analysis_model != "test":
+        excerpts = await store.get_corpus_excerpts_async()
+        corpus = "\n\n---\n\n".join(excerpts) if excerpts else ""
+        try:
+            merged = await aggregate_style_from_corpus(corpus, config)
+            await store.save_learned_style_async(merged.model_dump())
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Corpus style merge failed (%s); using latest ingest snapshot if LLM-derived",
+                exc,
+                exc_info=logger.isEnabledFor(logging.DEBUG),
+            )
+            if style.profile_source != "llm":
+                return False
+            await store.save_learned_style_async(style.model_dump())
+            return True
+
+    if style.profile_source != "llm":
+        return False
+    await store.save_learned_style_async(style.model_dump())
+    return True
 
 
 async def ingest_samples(
@@ -56,6 +99,9 @@ async def ingest_samples(
         "avg_sentence_length": style.avg_sentence_length,
         "vocabulary_richness": style.vocabulary_richness,
         "formality_score": style.formality_score,
+        "humor": style.humor,
+        "technical_depth": style.technical_depth,
+        "warmth": style.warmth,
         "dominant_tone": style.dominant_tone,
     }
     await store.add_samples_async(
@@ -70,16 +116,12 @@ async def ingest_samples(
     )
 
     total = await store.sample_count_async()
-    profile_updated = False
-
-    # Aggregate profile update: only from LLM-derived snapshots (skip short-only heuristics).
-    # TODO: Full corpus re-analysis merging all samples via Claude.
-    if (
-        total >= config.profile_reanalysis_threshold
-        and style.profile_source == "llm"
-    ):
-        await store.save_learned_style_async(style.model_dump())
-        profile_updated = True
+    profile_updated = await _maybe_update_aggregate_profile(
+        total_samples=total,
+        config=config,
+        store=store,
+        style=style,
+    )
 
     return IngestResult(
         samples_stored=len(chunks),

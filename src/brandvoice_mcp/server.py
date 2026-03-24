@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, Literal
+from collections.abc import Awaitable
+from typing import Any, Literal, TypeVar
 
 from mcp.server import FastMCP
 
@@ -20,6 +22,27 @@ from brandvoice_mcp.tools import (
 )
 
 logger = logging.getLogger("brandvoice-mcp")
+
+# Per-tool ceiling so a stuck embedding/LLM call cannot block the MCP session indefinitely.
+_TOOL_TIMEOUT_SEC = 300
+
+_T = TypeVar("_T")
+
+
+async def _call_tool(name: str, coro: Awaitable[_T]) -> _T:
+    try:
+        return await asyncio.wait_for(coro, timeout=_TOOL_TIMEOUT_SEC)
+    except TimeoutError as exc:
+        logger.error("Tool %s exceeded %ss timeout", name, _TOOL_TIMEOUT_SEC)
+        raise RuntimeError(
+            f"{name} timed out after {_TOOL_TIMEOUT_SEC}s. Try smaller content, fewer samples, "
+            "or check network/API availability."
+        ) from exc
+    except EnvironmentError:
+        raise
+    except Exception as exc:
+        logger.exception("%s failed", name)
+        raise RuntimeError(f"{name} failed: {exc}") from exc
 
 
 def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
@@ -46,16 +69,19 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         Feed it blog posts, tweets, emails, docs — anything that represents
         how you write.
         """
-        result = await ingest_tool.ingest_samples(
-            content=content,
-            source=source,
-            title=title,
-            url=url,
-            config=config,
-            store=store,
-            embeddings=embedding_service,
+        result = await _call_tool(
+            "ingest_samples",
+            ingest_tool.ingest_samples(
+                content=content,
+                source=source,
+                title=title,
+                url=url,
+                config=config,
+                store=store,
+                embeddings=embedding_service,
+            ),
         )
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def get_voice_context(
@@ -72,15 +98,18 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         Call this BEFORE generating any content. Inject the returned
         prompt_injection into your system prompt or prepend it to your request.
         """
-        result = await voice_context_tool.get_voice_context(
-            task=task,
-            platform=platform,
-            top_k=top_k,
-            config=config,
-            store=store,
-            embeddings=embedding_service,
+        result = await _call_tool(
+            "get_voice_context",
+            voice_context_tool.get_voice_context(
+                task=task,
+                platform=platform,
+                top_k=top_k,
+                config=config,
+                store=store,
+                embeddings=embedding_service,
+            ),
         )
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def set_guidelines(
@@ -99,16 +128,19 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
 
         All fields are optional — only provided fields are updated.
         """
-        result = await guidelines_tool.set_guidelines(
-            store=store,
-            pillars=pillars,
-            tone=tone,
-            preferred_vocabulary=preferred_vocabulary,
-            avoided_vocabulary=avoided_vocabulary,
-            topics=topics,
-            custom_instructions=custom_instructions,
+        result = await _call_tool(
+            "set_guidelines",
+            guidelines_tool.set_guidelines(
+                store=store,
+                pillars=pillars,
+                tone=tone,
+                preferred_vocabulary=preferred_vocabulary,
+                avoided_vocabulary=avoided_vocabulary,
+                topics=topics,
+                custom_instructions=custom_instructions,
+            ),
         )
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def check_alignment(
@@ -122,13 +154,16 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         alignment score with drift flags and rewrite hints. Use as a quality
         gate before publishing.
         """
-        result = await alignment_tool.check_alignment(
-            content=content,
-            platform=platform,
-            config=config,
-            store=store,
+        result = await _call_tool(
+            "check_alignment",
+            alignment_tool.check_alignment(
+                content=content,
+                platform=platform,
+                config=config,
+                store=store,
+            ),
         )
-        return result.model_dump()
+        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def get_profile() -> dict[str, Any]:
@@ -138,7 +173,10 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         and a human-readable style summary. Useful for reviewing what the
         system has learned about your writing.
         """
-        result = await profile_tool.get_profile(store=store)
+        result = await _call_tool(
+            "get_profile",
+            profile_tool.get_profile(store=store),
+        )
         return result.model_dump(mode="json")
 
     @mcp.tool()
@@ -152,20 +190,20 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         Browse samples with optional filtering by source type.
         Use this to review what's been ingested or find samples to remove.
         """
-        result = await samples_tool.list_samples(
-            store=store,
-            source=source,
-            limit=limit,
-            offset=offset,
+        result = await _call_tool(
+            "list_samples",
+            samples_tool.list_samples(
+                store=store,
+                source=source,
+                limit=limit,
+                offset=offset,
+            ),
         )
         return result.model_dump(mode="json")
 
     return mcp, config, store, embedding_service
 
 
-# TODO: Add error handling for MCP protocol edge cases — large response
-# payloads, serialization of datetime/complex types, and timeout handling.
-# Test by running through Claude Desktop and Cursor with real content.
 def run_server() -> None:
     """Start the MCP server over stdio."""
     mcp, config, _store, _embeddings = create_server()

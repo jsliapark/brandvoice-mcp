@@ -54,6 +54,9 @@ def _normalize_snapshot(data: dict[str, Any]) -> StyleSnapshot:
         avg_sentence_length=float(data.get("avg_sentence_length", 15.0)),
         vocabulary_richness=_f("vocabulary_richness", 0.5),
         formality_score=_f("formality_score", 0.5),
+        humor=_f("humor", 0.5),
+        technical_depth=_f("technical_depth", 0.5),
+        warmth=_f("warmth", 0.5),
         dominant_tone=tone,
         rhetorical_patterns=patterns,
         profile_source="llm",
@@ -81,15 +84,58 @@ def heuristic_style_snapshot(content: str) -> StyleSnapshot:
         "nevertheless",
         "moreover",
     }
+    _FORMALITY_BASE = 0.5
+    _FORMALITY_HIT_WEIGHT = 0.1
     casual_markers = {"gonna", "wanna", "kinda", "lol", "btw", "imo", "tbh"}
     formal_count = sum(1 for w in unique_words if w in formality_markers)
     casual_count = sum(1 for w in unique_words if w in casual_markers)
-    formality_score = min(1.0, max(0.0, 0.5 + (formal_count - casual_count) * 0.1))
+    formality_score = min(1.0, max(0.0, _FORMALITY_BASE + (formal_count - casual_count) * _FORMALITY_HIT_WEIGHT))
+
+
+    _HUMOR_BASE = 0.35
+    _HUMOR_HIT_WEIGHT = 0.12
+    humor_markers = {"lol", "haha", "heh", "lmao", "jk", "j/k", "funny"}
+    humor_hits = sum(1 for w in words if w.lower().strip(".,!?;:'\"()[]{}") in humor_markers)
+    humor = min(1.0, max(0.0, _HUMOR_BASE + humor_hits * _HUMOR_HIT_WEIGHT))
+
+    tech_tokens = {
+        "api",
+        "async",
+        "def",
+        "import",
+        "function",
+        "class",
+        "http",
+        "sql",
+        "json",
+        "graphql",
+        "typescript",
+        "python",
+        "docker",
+        "kubernetes",
+        "database",
+        "endpoint",
+        "schema",
+        "deploy",
+    }
+    _TECHNICAL_DEPTH_BASE = 0.4
+    _TECHNICAL_DEPTH_HIT_WEIGHT = 0.08
+    tech_hits = sum(1 for w in unique_words if w in tech_tokens)
+    technical_depth = min(1.0, max(0.0, _TECHNICAL_DEPTH_BASE + tech_hits * _TECHNICAL_DEPTH_HIT_WEIGHT))
+
+    _WARMTH_BASE = 0.45
+    _WARMTH_HIT_WEIGHT = 0.05
+    warm_markers = {"you", "your", "we", "our", "us", "i've", "i'm", "let's"}
+    warm_hits = sum(1 for w in unique_words if w in warm_markers)
+    warmth = min(1.0, max(0.0, _WARMTH_BASE + warm_hits * _WARMTH_HIT_WEIGHT))
 
     return StyleSnapshot(
         avg_sentence_length=round(avg_sentence_length, 1),
         vocabulary_richness=round(min(1.0, vocabulary_richness), 3),
         formality_score=round(formality_score, 2),
+        humor=round(humor, 2),
+        technical_depth=round(technical_depth, 2),
+        warmth=round(warmth, 2),
         dominant_tone="conversational",
         rhetorical_patterns=[],
         profile_source="heuristic",
@@ -141,6 +187,44 @@ async def analyze_style(content: str, config: Config) -> StyleSnapshot:
             exc_info=logger.isEnabledFor(logging.DEBUG),
         )
         return heuristic_style_snapshot(content)
+
+
+_CORPUS_MAX_CHARS = 100_000
+
+
+async def _aggregate_style_llm(corpus: str, config: Config) -> StyleSnapshot:
+    """Call Claude with ``prompts/corpus_aggregate.md`` for a merged StyleSnapshot."""
+    trimmed = corpus[:_CORPUS_MAX_CHARS]
+    prompt = load_prompt("corpus_aggregate").format(corpus=trimmed)
+    client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+
+    response = await client.messages.create(
+        model=config.analysis_model,
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    text_parts: list[str] = []
+    for block in response.content:
+        if hasattr(block, "text"):
+            text_parts.append(block.text)
+    raw = "".join(text_parts).strip()
+    if not raw:
+        raise ValueError("Empty response from corpus aggregate model")
+
+    data = extract_json_object(raw)
+    return _normalize_snapshot(data)
+
+
+async def aggregate_style_from_corpus(corpus_text: str, config: Config) -> StyleSnapshot:
+    """Merge many stored excerpts into one aggregate profile (Claude, or heuristics in test mode)."""
+    if not corpus_text.strip():
+        return heuristic_style_snapshot("")
+
+    if config.analysis_model == "test":
+        return heuristic_style_snapshot(corpus_text)
+
+    return await _aggregate_style_llm(corpus_text, config)
 
 
 def chunk_content(

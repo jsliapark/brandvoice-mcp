@@ -8,9 +8,10 @@ import pytest
 
 from brandvoice_mcp.analysis import style_analyzer
 from brandvoice_mcp.analysis.style_analyzer import (
+    aggregate_style_from_corpus,
+    analyze_style,
     heuristic_style_snapshot,
     _normalize_snapshot,
-    analyze_style,
 )
 from brandvoice_mcp.llm_json import extract_json_object
 from brandvoice_mcp.config import Config
@@ -76,7 +77,8 @@ async def test_analyze_style_llm_path_parses_response(tmp_data_dir) -> None:
     mock_block = MagicMock()
     mock_block.text = (
         '{"avg_sentence_length": 14.2, "vocabulary_richness": 0.72, '
-        '"formality_score": 0.45, "dominant_tone": "professional", '
+        '"formality_score": 0.45, "humor": 0.2, "technical_depth": 0.7, '
+        '"warmth": 0.55, "dominant_tone": "professional", '
         '"rhetorical_patterns": ["uses lists"]}'
     )
     mock_response.content = [mock_block]
@@ -91,6 +93,9 @@ async def test_analyze_style_llm_path_parses_response(tmp_data_dir) -> None:
 
     assert result.avg_sentence_length == 14.2
     assert result.dominant_tone == "professional"
+    assert result.humor == 0.2
+    assert result.technical_depth == 0.7
+    assert result.warmth == 0.55
     assert "uses lists" in result.rhetorical_patterns
     assert result.profile_source == "llm"
     mock_client.messages.create.assert_awaited_once()
@@ -131,3 +136,69 @@ def test_heuristic_nonempty() -> None:
     )
     assert snap.formality_score >= 0.0
     assert snap.profile_source == "heuristic"
+
+
+def test_normalize_snapshot_defaults_tone_dimensions() -> None:
+    snap = _normalize_snapshot(
+        {
+            "avg_sentence_length": 10.0,
+            "vocabulary_richness": 0.5,
+            "formality_score": 0.5,
+            "dominant_tone": "professional",
+            "rhetorical_patterns": [],
+        }
+    )
+    assert snap.humor == 0.5
+    assert snap.technical_depth == 0.5
+    assert snap.warmth == 0.5
+
+
+@pytest.mark.asyncio
+async def test_aggregate_style_from_corpus_test_mode(tmp_data_dir) -> None:
+    cfg = Config(
+        data_dir=tmp_data_dir,
+        anthropic_api_key="x",
+        embedding_model="test",
+        analysis_model="test",
+        profile_reanalysis_threshold=3,
+        chunk_target_tokens=350,
+        chunk_min_tokens=50,
+        chunk_max_tokens=600,
+    )
+    merged = await aggregate_style_from_corpus(
+        "We shipped the API. You will love how fast it is. lol",
+        cfg,
+    )
+    assert merged.profile_source == "heuristic"
+    assert merged.avg_sentence_length > 0
+
+
+@pytest.mark.asyncio
+async def test_aggregate_style_from_corpus_llm_path(tmp_data_dir) -> None:
+    cfg = Config(
+        data_dir=tmp_data_dir,
+        anthropic_api_key="sk-test",
+        embedding_model="test",
+        analysis_model="claude-sonnet-4-20250514",
+        profile_reanalysis_threshold=3,
+        chunk_target_tokens=350,
+        chunk_min_tokens=50,
+        chunk_max_tokens=600,
+    )
+    mock_response = MagicMock()
+    mock_block = MagicMock()
+    mock_block.text = (
+        '{"avg_sentence_length": 11.0, "vocabulary_richness": 0.6, '
+        '"formality_score": 0.5, "humor": 0.3, "technical_depth": 0.8, '
+        '"warmth": 0.4, "dominant_tone": "professional", "rhetorical_patterns": []}'
+    )
+    mock_response.content = [mock_block]
+    with patch.object(style_analyzer, "anthropic") as mock_anthropic_pkg:
+        mock_client = MagicMock()
+        mock_client.messages = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_anthropic_pkg.AsyncAnthropic.return_value = mock_client
+        merged = await aggregate_style_from_corpus("Chunk one.\n\n---\n\nChunk two.", cfg)
+    assert merged.profile_source == "llm"
+    assert merged.technical_depth == 0.8
+    mock_client.messages.create.assert_awaited_once()

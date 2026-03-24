@@ -93,6 +93,23 @@ class TestVoiceStoreSamples:
         assert total == 0
         assert entries == []
 
+    def test_get_corpus_excerpts_respects_limits(self, store: VoiceStore) -> None:
+        long_a = "Alpha sentence. " * 200
+        long_b = "Beta sentence. " * 200
+        store.add_samples(
+            chunks=[long_a, long_b],
+            embeddings=[deterministic_embedding(long_a), deterministic_embedding(long_b)],
+            metadata={"source": "blog"},
+        )
+        excerpts = store.get_corpus_excerpts(
+            max_chunks=5,
+            max_chars_per_chunk=100,
+            max_total_chars=150,
+        )
+        assert len(excerpts) >= 1
+        assert sum(len(e) for e in excerpts) <= 150
+        assert all(len(e) <= 100 for e in excerpts)
+
 
 class TestVoiceStoreProfile:
     """Test voice-profile storage operations."""

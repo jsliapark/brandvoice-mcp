@@ -101,18 +101,22 @@ def _resolve_tone(
     guidelines: dict | None,
 ) -> ToneConfig:
     """Merge learned tone with explicit overrides."""
-    # TODO: Only formality is derived from learned style. Once LLM-based
-    # analysis produces humor, technical_depth, and warmth scores,
-    # map all four dimensions from the learned profile here.
     base = ToneConfig(formality=0.5, humor=0.3, technical_depth=0.5, warmth=0.5)
 
     if learned:
-        formality = learned.get("formality_score", base.formality)
+
+        def _tone_f(key: str, default: float) -> float:
+            try:
+                v = float(learned.get(key, default))
+                return max(0.0, min(1.0, v))
+            except (TypeError, ValueError):
+                return default
+
         base = ToneConfig(
-            formality=formality,
-            humor=base.humor,
-            technical_depth=base.technical_depth,
-            warmth=base.warmth,
+            formality=_tone_f("formality_score", base.formality),
+            humor=_tone_f("humor", base.humor),
+            technical_depth=_tone_f("technical_depth", base.technical_depth),
+            warmth=_tone_f("warmth", base.warmth),
         )
 
     explicit_tone = (guidelines or {}).get("tone")

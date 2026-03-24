@@ -168,6 +168,28 @@ class VoiceStore:
                 out.append(doc[:max_chars_per_sample])
         return out
 
+    def get_corpus_excerpts(
+        self,
+        max_chunks: int = 40,
+        max_chars_per_chunk: int = 2000,
+        max_total_chars: int = 48_000,
+    ) -> list[str]:
+        """Return truncated chunk texts for corpus-level style aggregation (LLM context)."""
+        cap = min(max_chunks, self.total_samples or 0)
+        if cap == 0:
+            return []
+        results = self._samples.get(limit=cap, include=["documents"])
+        docs = [d for d in (results.get("documents") or []) if d]
+        out: list[str] = []
+        total = 0
+        for doc in docs:
+            piece = (doc or "")[:max_chars_per_chunk]
+            if total + len(piece) > max_total_chars:
+                break
+            out.append(piece)
+            total += len(piece)
+        return out
+
     def sources_breakdown(self) -> dict[str, int]:
         """Count samples per source type."""
         results = self._samples.get(include=["metadatas"])
@@ -293,6 +315,19 @@ class VoiceStore:
     ) -> list[str]:
         return await asyncio.to_thread(
             self.get_sample_snippets, limit, max_chars_per_sample
+        )
+
+    async def get_corpus_excerpts_async(
+        self,
+        max_chunks: int = 40,
+        max_chars_per_chunk: int = 2000,
+        max_total_chars: int = 48_000,
+    ) -> list[str]:
+        return await asyncio.to_thread(
+            self.get_corpus_excerpts,
+            max_chunks,
+            max_chars_per_chunk,
+            max_total_chars,
         )
 
     async def get_learned_style_async(self) -> dict[str, Any] | None:
