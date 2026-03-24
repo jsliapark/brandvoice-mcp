@@ -95,7 +95,7 @@ After drafting text, call **`check_alignment`** with the draft. You get a 0–10
 ## Development
 
 ```bash
-git clone https://github.com/jinsungpark/brandvoice-mcp.git
+git clone https://github.com/jsliapark/brandvoice-mcp.git
 cd brandvoice-mcp
 pip install -e ".[dev]"
 pytest
