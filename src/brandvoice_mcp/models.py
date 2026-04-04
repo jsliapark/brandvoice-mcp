@@ -136,3 +136,11 @@ class SamplesList(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+# ── delete_samples ───────────────────────────────────────────────────
+
+
+class DeleteSamplesResult(BaseModel):
+    deleted_count: int
+    remaining_count: int

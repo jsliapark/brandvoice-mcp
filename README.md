@@ -60,7 +60,8 @@ After drafting text, call **`check_alignment`** with the draft. You get a 0–10
 | `set_guidelines` | Merge explicit brand voice rules (pillars, tone, vocabulary, etc.) |
 | `check_alignment` | Score how well content matches your voice |
 | `get_profile` | Full profile: learned style (including `profile_source`), guidelines, counts |
-| `list_samples` | Paginated list of ingested samples |
+| `list_samples` | Paginated list of ingested samples (each row includes the Chroma document `id` for `delete_samples`) |
+| `delete_samples` | Delete samples by `sample_ids` (from `list_samples`) or set `all` to true to clear the collection; refreshes or resets the learned profile |
 
 ## How it works
 

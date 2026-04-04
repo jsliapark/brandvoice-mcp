@@ -42,6 +42,7 @@ async def test_stdio_server_lists_tools_and_list_samples(tmp_path: Path) -> None
                 "check_alignment",
                 "get_profile",
                 "list_samples",
+                "delete_samples",
             }
             res = await session.call_tool("list_samples", {})
             assert res.isError is False

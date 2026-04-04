@@ -16,7 +16,11 @@ import chromadb
 from chromadb.config import Settings
 
 from brandvoice_mcp.config import Config
-from brandvoice_mcp.storage.profile_json import load_profile_state, save_profile_state
+from brandvoice_mcp.storage.profile_json import (
+    default_profile_state,
+    load_profile_state,
+    save_profile_state,
+)
 
 WRITING_SAMPLES_COLLECTION = "writing_samples"
 VOICE_PROFILE_COLLECTION = "voice_profile"
@@ -149,6 +153,34 @@ class VoiceStore:
                     }
                 )
         return entries, total
+
+    def delete_samples_by_ids(self, ids: list[str]) -> tuple[int, int]:
+        """Delete stored chunks with the given Chroma document IDs.
+
+        Missing IDs are ignored. Returns ``(deleted_count, remaining_count)``.
+        """
+        if not ids:
+            return 0, self.total_samples
+        results = self._samples.get(ids=ids)
+        existing = [i for i in (results.get("ids") or []) if i]
+        if not existing:
+            return 0, self.total_samples
+        self._samples.delete(ids=existing)
+        return len(existing), self.total_samples
+
+    def delete_all_writing_samples(self) -> int:
+        """Remove every document in the writing-samples collection. Returns how many were removed."""
+        n = self.total_samples
+        self._client.delete_collection(WRITING_SAMPLES_COLLECTION)
+        self._samples = self._client.get_or_create_collection(
+            name=WRITING_SAMPLES_COLLECTION,
+            metadata={"hnsw:space": "cosine"},
+        )
+        return n
+
+    def reset_profile_to_default(self) -> None:
+        """Reset ``profile.json`` to the default empty state (no learned style or guidelines)."""
+        save_profile_state(self._profile_json_path, default_profile_state())
 
     @property
     def total_samples(self) -> int:
@@ -304,6 +336,15 @@ class VoiceStore:
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         return await asyncio.to_thread(self.list_samples, source, limit, offset)
+
+    async def delete_samples_by_ids_async(self, ids: list[str]) -> tuple[int, int]:
+        return await asyncio.to_thread(self.delete_samples_by_ids, ids)
+
+    async def delete_all_writing_samples_async(self) -> int:
+        return await asyncio.to_thread(self.delete_all_writing_samples)
+
+    async def reset_profile_to_default_async(self) -> None:
+        await asyncio.to_thread(self.reset_profile_to_default)
 
     async def sample_count_async(self) -> int:
         return await asyncio.to_thread(lambda: self.total_samples)
