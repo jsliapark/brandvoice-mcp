@@ -1,4 +1,4 @@
-"""MCP server definition with all 6 brand-voice tools registered."""
+"""MCP server definition with all brand-voice tools registered."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from brandvoice_mcp.storage.chromadb import VoiceStore
 from brandvoice_mcp.storage.embeddings import EmbeddingService
 from brandvoice_mcp.tools import (
     alignment as alignment_tool,
+    delete_samples as delete_samples_tool,
     guidelines as guidelines_tool,
     ingest as ingest_tool,
     profile as profile_tool,
@@ -197,6 +198,29 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
                 source=source,
                 limit=limit,
                 offset=offset,
+            ),
+        )
+        return result.model_dump(mode="json")
+
+    @mcp.tool()
+    async def delete_samples(
+        sample_ids: list[str] | None = None,
+        all: bool = False,
+    ) -> dict[str, Any]:
+        """Delete ingested writing samples by Chroma document ID or clear the entire collection.
+
+        Pass ``sample_ids`` (from ``list_samples``) to remove specific chunks, or set ``all``
+        to true to wipe every stored sample. When ``all`` is true, ``sample_ids`` must be
+        omitted or empty. After deletion, the learned voice profile is regenerated from any
+        remaining samples, or reset to the default empty state if none remain.
+        """
+        result = await _call_tool(
+            "delete_samples",
+            delete_samples_tool.delete_samples(
+                sample_ids=sample_ids,
+                delete_all=all,
+                config=config,
+                store=store,
             ),
         )
         return result.model_dump(mode="json")

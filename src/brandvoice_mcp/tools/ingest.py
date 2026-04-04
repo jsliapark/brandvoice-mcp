@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -61,6 +62,32 @@ async def _maybe_update_aggregate_profile(
         return False
     await store.save_learned_style_async(style.model_dump())
     return True
+
+
+async def refresh_learned_profile_after_samples_change(
+    *,
+    config: Config,
+    store: VoiceStore,
+) -> None:
+    """Recompute or clear the aggregate learned profile after samples were removed."""
+    total = await store.sample_count_async()
+    if total == 0:
+        await store.reset_profile_to_default_async()
+        return
+
+    excerpts = await store.get_corpus_excerpts_async()
+    corpus = "\n\n---\n\n".join(excerpts) if excerpts else ""
+    try:
+        merged = await aggregate_style_from_corpus(corpus, config)
+        await store.save_learned_style_async(merged.model_dump())
+    except Exception as exc:
+        logger.warning(
+            "Profile regeneration after sample delete failed (%s); using heuristic snapshot",
+            exc,
+            exc_info=logger.isEnabledFor(logging.DEBUG),
+        )
+        snapshot = heuristic_style_snapshot(corpus)
+        await store.save_learned_style_async(snapshot.model_dump())
 
 
 async def ingest_samples(
