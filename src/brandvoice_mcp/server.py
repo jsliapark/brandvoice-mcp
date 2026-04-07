@@ -5,11 +5,20 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable
-from typing import Any, Literal, TypeVar
+from typing import Literal, TypeVar
 
 from mcp.server import FastMCP
 
 from brandvoice_mcp.config import Config, load_config
+from brandvoice_mcp.models import (
+    AlignmentResult,
+    DeleteSamplesResult,
+    GuidelinesResult,
+    IngestResult,
+    SamplesList,
+    VoiceContext,
+    VoiceProfile,
+)
 from brandvoice_mcp.storage.chromadb import VoiceStore
 from brandvoice_mcp.storage.embeddings import EmbeddingService
 from brandvoice_mcp.tools import (
@@ -26,6 +35,27 @@ logger = logging.getLogger("brandvoice-mcp")
 
 # Per-tool ceiling so a stuck embedding/LLM call cannot block the MCP session indefinitely.
 _TOOL_TIMEOUT_SEC = 300
+
+# Ingest guard — prevents accidental giant pastes from hitting the embedding API.
+_MAX_INGEST_CHARS = 100_000
+
+_VALID_SOURCES: frozenset[str] = frozenset({"blog", "social", "email", "doc", "other"})
+_VALID_PLATFORMS: frozenset[str] = frozenset({"blog", "linkedin", "twitter", "email", "general"})
+
+
+def _check_source(source: str) -> None:
+    if source not in _VALID_SOURCES:
+        raise ValueError(
+            f"Unknown source {source!r}. Valid values: {', '.join(sorted(_VALID_SOURCES))}."
+        )
+
+
+def _check_platform(platform: str) -> None:
+    if platform not in _VALID_PLATFORMS:
+        raise ValueError(
+            f"Unknown platform {platform!r}. Valid values: {', '.join(sorted(_VALID_PLATFORMS))}."
+        )
+
 
 _T = TypeVar("_T")
 
@@ -59,7 +89,7 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         source: Literal["blog", "social", "email", "doc", "other"] = "other",
         title: str | None = None,
         url: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> IngestResult:
         """Ingest a writing sample to learn your voice.
 
         Analyzes the content for style patterns (sentence structure, vocabulary,
@@ -70,7 +100,15 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         Feed it blog posts, tweets, emails, docs — anything that represents
         how you write.
         """
-        result = await _call_tool(
+        if len(content) > _MAX_INGEST_CHARS:
+            raise ValueError(
+                f"Content too large ({len(content):,} characters). "
+                f"Limit is {_MAX_INGEST_CHARS:,} characters "
+                f"(~{_MAX_INGEST_CHARS // 5:,} words). "
+                "Split into smaller samples and ingest each separately."
+            )
+        _check_source(source)
+        return await _call_tool(
             "ingest_samples",
             ingest_tool.ingest_samples(
                 content=content,
@@ -82,14 +120,13 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
                 embeddings=embedding_service,
             ),
         )
-        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def get_voice_context(
         task: str,
         platform: Literal["blog", "linkedin", "twitter", "email", "general"] = "general",
         top_k: int = 3,
-    ) -> dict[str, Any]:
+    ) -> VoiceContext:
         """Get your voice context for a writing task.
 
         Retrieves your voice profile and the most relevant past writing samples
@@ -99,7 +136,8 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         Call this BEFORE generating any content. Inject the returned
         prompt_injection into your system prompt or prepend it to your request.
         """
-        result = await _call_tool(
+        _check_platform(platform)
+        return await _call_tool(
             "get_voice_context",
             voice_context_tool.get_voice_context(
                 task=task,
@@ -110,7 +148,6 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
                 embeddings=embedding_service,
             ),
         )
-        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def set_guidelines(
@@ -120,7 +157,7 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         avoided_vocabulary: list[str] | None = None,
         topics: list[str] | None = None,
         custom_instructions: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> GuidelinesResult:
         """Set or update your brand voice guidelines.
 
         These explicit guidelines complement the style learned from your
@@ -129,7 +166,7 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
 
         All fields are optional — only provided fields are updated.
         """
-        result = await _call_tool(
+        return await _call_tool(
             "set_guidelines",
             guidelines_tool.set_guidelines(
                 store=store,
@@ -141,13 +178,12 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
                 custom_instructions=custom_instructions,
             ),
         )
-        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def check_alignment(
         content: str,
         platform: Literal["blog", "linkedin", "twitter", "email", "general"] = "general",
-    ) -> dict[str, Any]:
+    ) -> AlignmentResult:
         """Check how well content matches your voice profile.
 
         Uses Claude with your stored style and sample snippets when configured;
@@ -155,7 +191,8 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         alignment score with drift flags and rewrite hints. Use as a quality
         gate before publishing.
         """
-        result = await _call_tool(
+        _check_platform(platform)
+        return await _call_tool(
             "check_alignment",
             alignment_tool.check_alignment(
                 content=content,
@@ -164,34 +201,34 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
                 store=store,
             ),
         )
-        return result.model_dump(mode="json")
 
     @mcp.tool()
-    async def get_profile() -> dict[str, Any]:
+    async def get_profile() -> VoiceProfile:
         """Get your complete voice profile.
 
         Returns learned style patterns, explicit guidelines, sample counts,
         and a human-readable style summary. Useful for reviewing what the
         system has learned about your writing.
         """
-        result = await _call_tool(
+        return await _call_tool(
             "get_profile",
             profile_tool.get_profile(store=store),
         )
-        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def list_samples(
-        source: str | None = None,
+        source: Literal["blog", "social", "email", "doc", "other"] | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> dict[str, Any]:
+    ) -> SamplesList:
         """List your ingested writing samples.
 
         Browse samples with optional filtering by source type.
         Use this to review what's been ingested or find samples to remove.
         """
-        result = await _call_tool(
+        if source is not None:
+            _check_source(source)
+        return await _call_tool(
             "list_samples",
             samples_tool.list_samples(
                 store=store,
@@ -200,13 +237,12 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
                 offset=offset,
             ),
         )
-        return result.model_dump(mode="json")
 
     @mcp.tool()
     async def delete_samples(
         sample_ids: list[str] | None = None,
         all: bool = False,
-    ) -> dict[str, Any]:
+    ) -> DeleteSamplesResult:
         """Delete ingested writing samples by Chroma document ID or clear the entire collection.
 
         Pass ``sample_ids`` (from ``list_samples``) to remove specific chunks, or set ``all``
@@ -214,7 +250,7 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
         omitted or empty. After deletion, the learned voice profile is regenerated from any
         remaining samples, or reset to the default empty state if none remain.
         """
-        result = await _call_tool(
+        return await _call_tool(
             "delete_samples",
             delete_samples_tool.delete_samples(
                 sample_ids=sample_ids,
@@ -223,7 +259,6 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
                 store=store,
             ),
         )
-        return result.model_dump(mode="json")
 
     return mcp, config, store, embedding_service
 

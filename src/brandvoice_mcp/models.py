@@ -43,6 +43,7 @@ class StyleSnapshot(BaseModel):
 
 
 SourceType = Literal["blog", "social", "email", "doc", "other"]
+PlatformType = Literal["blog", "linkedin", "twitter", "email", "general"]
 
 
 class IngestResult(BaseModel):
