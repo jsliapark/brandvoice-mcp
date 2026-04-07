@@ -8,6 +8,7 @@ from collections.abc import Awaitable
 from typing import Literal, TypeVar
 
 from mcp.server import FastMCP
+from mcp.types import PromptMessage, TextContent
 
 from brandvoice_mcp.config import Config, load_config
 from brandvoice_mcp.models import (
@@ -241,24 +242,93 @@ def create_server() -> tuple[FastMCP, Config, VoiceStore, EmbeddingService]:
     @mcp.tool()
     async def delete_samples(
         sample_ids: list[str] | None = None,
-        all: bool = False,
+        delete_all: bool = False,
     ) -> DeleteSamplesResult:
         """Delete ingested writing samples by Chroma document ID or clear the entire collection.
 
-        Pass ``sample_ids`` (from ``list_samples``) to remove specific chunks, or set ``all``
-        to true to wipe every stored sample. When ``all`` is true, ``sample_ids`` must be
-        omitted or empty. After deletion, the learned voice profile is regenerated from any
-        remaining samples, or reset to the default empty state if none remain.
+        Pass ``sample_ids`` (from ``list_samples``) to remove specific chunks, or set
+        ``delete_all`` to true to wipe every stored sample. When ``delete_all`` is true,
+        ``sample_ids`` must be omitted or empty. After deletion, the learned voice profile
+        is regenerated from any remaining samples, or reset to the default empty state if
+        none remain.
         """
         return await _call_tool(
             "delete_samples",
             delete_samples_tool.delete_samples(
                 sample_ids=sample_ids,
-                delete_all=all,
+                delete_all=delete_all,
                 config=config,
                 store=store,
             ),
         )
+
+    # ── MCP Resources ────────────────────────────────────────────────────────
+    # Read-only snapshots of server state. Clients can read these directly
+    # without going through the agentic tool loop, and MCP clients that support
+    # resource subscriptions will receive updates automatically.
+
+    @mcp.resource("brandvoice://profile", mime_type="application/json")
+    async def profile_resource() -> str:
+        """Current voice profile: learned style, explicit guidelines, sample counts, and style summary."""
+        result = await profile_tool.get_profile(store=store)
+        return result.model_dump_json()
+
+    @mcp.resource("brandvoice://samples", mime_type="application/json")
+    async def samples_resource() -> str:
+        """All ingested writing samples (first 100). Use the list_samples tool for pagination or source filtering."""
+        result = await samples_tool.list_samples(store=store, limit=100)
+        return result.model_dump_json()
+
+    # ── MCP Prompts ──────────────────────────────────────────────────────────
+    # Reusable conversation starters for the two main workflows.
+    # Clients surface these as slash-commands (e.g. /write_in_voice).
+    # Each prompt fetches live data at invocation time so the returned message
+    # already contains the real voice context or draft — no extra tool calls needed.
+
+    @mcp.prompt()
+    async def write_in_voice(
+        task: str,
+        platform: Literal["blog", "linkedin", "twitter", "email", "general"] = "general",
+    ) -> list[PromptMessage]:
+        """Pre-loads your voice context for a writing task.
+
+        Fetches your full voice profile and the most relevant past samples for
+        the given task and platform, then returns a ready-to-send message with
+        everything already embedded. Use this instead of calling get_voice_context
+        manually and copy-pasting the prompt_injection.
+        """
+        _check_platform(platform)
+        context = await voice_context_tool.get_voice_context(
+            task=task,
+            platform=platform,
+            top_k=3,
+            config=config,
+            store=store,
+            embeddings=embedding_service,
+        )
+        text = f"{context.prompt_injection}\n\nNow write the following in my voice:\n\n{task}"
+        return [PromptMessage(role="user", content=TextContent(type="text", text=text))]
+
+    @mcp.prompt()
+    async def check_my_draft(
+        content: str,
+        platform: Literal["blog", "linkedin", "twitter", "email", "general"] = "general",
+    ) -> list[PromptMessage]:
+        """Sets up a voice alignment check on a draft.
+
+        Returns a message that instructs Claude to run check_alignment on the
+        provided content and explain the score and drift flags in plain language.
+        Use this after drafting text instead of calling check_alignment manually.
+        """
+        _check_platform(platform)
+        text = (
+            "Please use the check_alignment tool to score how well this draft "
+            "matches my voice profile, then explain the score and any drift flags "
+            "in plain language with specific rewrite suggestions.\n\n"
+            f"Platform: {platform}\n\n"
+            f"Draft:\n{content}"
+        )
+        return [PromptMessage(role="user", content=TextContent(type="text", text=text))]
 
     return mcp, config, store, embedding_service
 

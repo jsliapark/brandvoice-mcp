@@ -142,6 +142,20 @@ def heuristic_style_snapshot(content: str) -> StyleSnapshot:
     )
 
 
+def _thinking_kwargs(config: Config) -> dict[str, Any]:
+    """Extra kwargs to pass to ``client.messages.create`` when extended thinking is on.
+
+    ``max_tokens`` must exceed ``budget_tokens``, so we reserve 2 048 tokens for
+    the JSON output on top of the thinking budget.
+    """
+    if config.extended_thinking:
+        return {
+            "thinking": {"type": "thinking", "budget_tokens": config.thinking_budget},
+            "max_tokens": config.thinking_budget + 2048,
+        }
+    return {"max_tokens": 1024}
+
+
 async def _analyze_style_llm(content: str, config: Config) -> StyleSnapshot:
     """Call Claude with ``prompts/style_analysis.md`` and parse JSON → StyleSnapshot."""
     prompt = load_prompt("style_analysis").format(content=content)
@@ -149,8 +163,8 @@ async def _analyze_style_llm(content: str, config: Config) -> StyleSnapshot:
 
     response = await client.messages.create(
         model=config.analysis_model,
-        max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
+        **_thinking_kwargs(config),
     )
 
     text_parts: list[str] = []
@@ -200,8 +214,8 @@ async def _aggregate_style_llm(corpus: str, config: Config) -> StyleSnapshot:
 
     response = await client.messages.create(
         model=config.analysis_model,
-        max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
+        **_thinking_kwargs(config),
     )
 
     text_parts: list[str] = []
