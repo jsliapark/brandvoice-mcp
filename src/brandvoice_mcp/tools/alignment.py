@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import anthropic
 
 from brandvoice_mcp.llm_json import extract_json_object
-from brandvoice_mcp.models import AlignmentResult, DriftFlag
+from brandvoice_mcp.models import AlignmentResult, DriftFlag, PlatformType
 from brandvoice_mcp.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -84,7 +84,7 @@ def _normalize_alignment_result(data: dict[str, Any]) -> AlignmentResult:
 
 async def _check_alignment_llm(
     content: str,
-    platform: str,
+    platform: PlatformType,
     *,
     config: Config,
     store: VoiceStore,
@@ -219,7 +219,7 @@ def _check_alignment_heuristic(
 
 async def check_alignment(
     content: str,
-    platform: str,
+    platform: PlatformType,
     *,
     config: Config,
     store: VoiceStore,

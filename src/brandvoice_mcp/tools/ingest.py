@@ -12,7 +12,7 @@ from brandvoice_mcp.analysis.style_analyzer import (
     chunk_content,
     heuristic_style_snapshot,
 )
-from brandvoice_mcp.models import IngestResult, StyleSnapshot
+from brandvoice_mcp.models import IngestResult, SourceType, StyleSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ async def refresh_learned_profile_after_samples_change(
 
 async def ingest_samples(
     content: str,
-    source: str,
+    source: SourceType,
     title: str | None,
     url: str | None,
     *,

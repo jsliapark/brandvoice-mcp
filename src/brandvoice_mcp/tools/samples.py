@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from brandvoice_mcp.models import SampleEntry, SamplesList
+from brandvoice_mcp.models import SampleEntry, SamplesList, SourceType
 
 if TYPE_CHECKING:
     from brandvoice_mcp.storage.chromadb import VoiceStore
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 async def list_samples(
     *,
     store: VoiceStore,
-    source: str | None = None,
+    source: SourceType | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> SamplesList:

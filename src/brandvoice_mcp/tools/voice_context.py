@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from brandvoice_mcp.analysis.prompt_builder import build_prompt_injection
-from brandvoice_mcp.models import ToneConfig, VoiceContext, VoiceSample
+from brandvoice_mcp.models import PlatformType, ToneConfig, VoiceContext, VoiceSample
 
 if TYPE_CHECKING:
     from brandvoice_mcp.config import Config
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 async def get_voice_context(
     task: str,
-    platform: str,
+    platform: PlatformType,
     top_k: int,
     *,
     config: Config,
