@@ -66,7 +66,7 @@ def load_config() -> Config:
             BRANDVOICE_EMBEDDING_MODEL=test (unit tests only).
         BRANDVOICE_DATA_DIR: Override default data directory (~/.brandvoice).
         BRANDVOICE_EMBEDDING_MODEL: OpenAI embedding model (default: text-embedding-3-small).
-        BRANDVOICE_ANALYSIS_MODEL: LLM model for style analysis (default: claude-sonnet-4-20250514).
+        BRANDVOICE_ANALYSIS_MODEL: LLM model for style analysis (default: claude-sonnet-4-6).
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -95,7 +95,7 @@ def load_config() -> Config:
         data_dir=data_dir,
         anthropic_api_key=api_key,
         embedding_model=embedding_model,
-        analysis_model=os.environ.get("BRANDVOICE_ANALYSIS_MODEL", "claude-sonnet-4-20250514"),
+        analysis_model=os.environ.get("BRANDVOICE_ANALYSIS_MODEL", "claude-sonnet-4-6"),
         profile_reanalysis_threshold=int(
             os.environ.get(
                 "BRANDVOICE_PROFILE_THRESHOLD",

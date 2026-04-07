@@ -1,6 +1,6 @@
 [project]
 name = "brandvoice-mcp"
-version = "0.1.2"
+version = "0.1.3"
 description = "An MCP server that learns your writing style and makes every AI client sound like you"
 readme = "README.md"
 license = { text = "MIT" }

@@ -1,4 +1,7 @@
 # brandvoice-mcp
+[![PyPI version](https://img.shields.io/pypi/v/brandvoice-mcp.svg)](https://pypi.org/project/brandvoice-mcp/)
+[![Python 3.11](https://img.shields.io/pypi/pyversions/brandvoice-mcp.svg)](https://pypi.org/project/brandvoice-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 An MCP server that learns your writing style and makes every AI client sound like you.
 
@@ -79,7 +82,7 @@ After drafting text, call **`check_alignment`** with the draft. You get a 0–10
 | `OPENAI_API_KEY` | *(required)* | OpenAI API key (chunk embeddings; Anthropic has no embeddings API) |
 | `BRANDVOICE_DATA_DIR` | `~/.brandvoice` | Data directory (`profile.json`, Chroma persistence) |
 | `BRANDVOICE_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model name |
-| `BRANDVOICE_ANALYSIS_MODEL` | `claude-sonnet-4-20250514` | Model for style analysis |
+| `BRANDVOICE_ANALYSIS_MODEL` | `claude-sonnet-4-6` | Model for style analysis |
 | `BRANDVOICE_PROFILE_THRESHOLD` | `5` | Minimum stored samples before aggregate profile can update after an LLM-analyzed ingest |
 
 ## Limitations
