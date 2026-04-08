@@ -85,6 +85,8 @@ After drafting text, call **`check_alignment`** with the draft. You get a 0–10
 | `BRANDVOICE_ANALYSIS_MODEL` | `claude-sonnet-4-6` | Model for style analysis |
 | `BRANDVOICE_PROFILE_THRESHOLD` | `5` | Minimum stored samples before aggregate profile can update after an LLM-analyzed ingest |
 
+> **Model deprecation:** If the default `claude-sonnet-4-6` is deprecated or unavailable in your region, set `BRANDVOICE_ANALYSIS_MODEL` to a supported model ID (e.g. `claude-opus-4-6` or `claude-haiku-4-5-20251001`). Claude 4 model IDs use no date suffix; check [Anthropic's model documentation](https://docs.anthropic.com/en/docs/about-claude/models) for the current list.
+
 ## Limitations
 
 - **Single client:** Designed for one MCP client at a time. Multiple clients sharing the same `~/.brandvoice` directory may hit SQLite/Chroma lock errors.

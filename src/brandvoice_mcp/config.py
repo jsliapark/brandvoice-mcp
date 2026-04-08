@@ -34,6 +34,11 @@ class Config:
     chunk_max_tokens: int
     #: OpenAI API key for ``EmbeddingService`` (not used when ``embedding_model`` is ``"test"``).
     openai_api_key: str | None = None
+    #: Enable extended thinking for style analysis and corpus aggregation calls.
+    extended_thinking: bool = False
+    #: Token budget for extended thinking (ignored when ``extended_thinking`` is False).
+    #: ``max_tokens`` for those calls is set to ``thinking_budget + 2048``.
+    thinking_budget: int = 5_000
 
     # Derived paths
     @property
@@ -67,6 +72,9 @@ def load_config() -> Config:
         BRANDVOICE_DATA_DIR: Override default data directory (~/.brandvoice).
         BRANDVOICE_EMBEDDING_MODEL: OpenAI embedding model (default: text-embedding-3-small).
         BRANDVOICE_ANALYSIS_MODEL: LLM model for style analysis (default: claude-sonnet-4-6).
+        BRANDVOICE_EXTENDED_THINKING: Set to "1" or "true" to enable extended thinking for
+            style analysis and corpus aggregation (default: disabled).
+        BRANDVOICE_THINKING_BUDGET: Token budget for extended thinking (default: 5000).
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -91,10 +99,20 @@ def load_config() -> Config:
             '"env": { "ANTHROPIC_API_KEY": "sk-ant-...", "OPENAI_API_KEY": "sk-..." }'
         )
 
+    extended_thinking = os.environ.get("BRANDVOICE_EXTENDED_THINKING", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    thinking_budget = int(os.environ.get("BRANDVOICE_THINKING_BUDGET", "5000"))
+
     config = Config(
         data_dir=data_dir,
         anthropic_api_key=api_key,
         embedding_model=embedding_model,
+        # Claude Sonnet 4.6 — latest mid-tier model as of 2026-04-08.
+        # Claude 4 model IDs use no date suffix (e.g. "claude-sonnet-4-6", not "claude-sonnet-4-6-YYYYMMDD").
+        # Override with BRANDVOICE_ANALYSIS_MODEL if this default is deprecated or unavailable.
         analysis_model=os.environ.get("BRANDVOICE_ANALYSIS_MODEL", "claude-sonnet-4-6"),
         profile_reanalysis_threshold=int(
             os.environ.get(
@@ -106,6 +124,8 @@ def load_config() -> Config:
         chunk_min_tokens=_CHUNK_MIN_TOKENS,
         chunk_max_tokens=_CHUNK_MAX_TOKENS,
         openai_api_key=openai_key,
+        extended_thinking=extended_thinking,
+        thinking_budget=thinking_budget,
     )
     config.ensure_directories()
     return config
