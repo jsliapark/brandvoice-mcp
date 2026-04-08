@@ -7,6 +7,7 @@ on API errors, or when JSON parsing fails.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 import anthropic
@@ -19,6 +20,16 @@ if TYPE_CHECKING:
     from brandvoice_mcp.config import Config
 
 logger = logging.getLogger(__name__)
+
+# ── Heuristic scoring constants ──
+_FORMALITY_BASE = 0.5
+_FORMALITY_HIT_WEIGHT = 0.1
+_HUMOR_BASE = 0.35
+_HUMOR_HIT_WEIGHT = 0.12
+_TECHNICAL_DEPTH_BASE = 0.4
+_TECHNICAL_DEPTH_HIT_WEIGHT = 0.08
+_WARMTH_BASE = 0.45
+_WARMTH_HIT_WEIGHT = 0.05
 
 _ALLOWED_TONES = frozenset(
     {
@@ -84,16 +95,11 @@ def heuristic_style_snapshot(content: str) -> StyleSnapshot:
         "nevertheless",
         "moreover",
     }
-    _FORMALITY_BASE = 0.5
-    _FORMALITY_HIT_WEIGHT = 0.1
     casual_markers = {"gonna", "wanna", "kinda", "lol", "btw", "imo", "tbh"}
     formal_count = sum(1 for w in unique_words if w in formality_markers)
     casual_count = sum(1 for w in unique_words if w in casual_markers)
     formality_score = min(1.0, max(0.0, _FORMALITY_BASE + (formal_count - casual_count) * _FORMALITY_HIT_WEIGHT))
 
-
-    _HUMOR_BASE = 0.35
-    _HUMOR_HIT_WEIGHT = 0.12
     humor_markers = {"lol", "haha", "heh", "lmao", "jk", "j/k", "funny"}
     humor_hits = sum(1 for w in words if w.lower().strip(".,!?;:'\"()[]{}") in humor_markers)
     humor = min(1.0, max(0.0, _HUMOR_BASE + humor_hits * _HUMOR_HIT_WEIGHT))
@@ -118,13 +124,9 @@ def heuristic_style_snapshot(content: str) -> StyleSnapshot:
         "schema",
         "deploy",
     }
-    _TECHNICAL_DEPTH_BASE = 0.4
-    _TECHNICAL_DEPTH_HIT_WEIGHT = 0.08
     tech_hits = sum(1 for w in unique_words if w in tech_tokens)
     technical_depth = min(1.0, max(0.0, _TECHNICAL_DEPTH_BASE + tech_hits * _TECHNICAL_DEPTH_HIT_WEIGHT))
 
-    _WARMTH_BASE = 0.45
-    _WARMTH_HIT_WEIGHT = 0.05
     warm_markers = {"you", "your", "we", "our", "us", "i've", "i'm", "let's"}
     warm_hits = sum(1 for w in unique_words if w in warm_markers)
     warmth = min(1.0, max(0.0, _WARMTH_BASE + warm_hits * _WARMTH_HIT_WEIGHT))
@@ -203,6 +205,8 @@ async def analyze_style(content: str, config: Config) -> StyleSnapshot:
         return heuristic_style_snapshot(content)
 
 
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
 _CORPUS_MAX_CHARS = 100_000
 
 
@@ -267,11 +271,7 @@ def chunk_content(
                 chunks.append("\n\n".join(buffer))
                 buffer = []
                 buffer_tokens = 0
-            sentences = [
-                s.strip() + "."
-                for s in para.replace("!", "!|").replace("?", "?|").replace(". ", ".|").split("|")
-                if s.strip()
-            ]
+            sentences = [s.strip() for s in _SENTENCE_RE.split(para) if s.strip()]
             sent_buf: list[str] = []
             sent_tokens = 0
             for sent in sentences:

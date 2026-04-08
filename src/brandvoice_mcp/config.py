@@ -110,6 +110,9 @@ def load_config() -> Config:
         data_dir=data_dir,
         anthropic_api_key=api_key,
         embedding_model=embedding_model,
+        # Claude Sonnet 4.6 — latest mid-tier model as of 2026-04-08.
+        # Claude 4 model IDs use no date suffix (e.g. "claude-sonnet-4-6", not "claude-sonnet-4-6-YYYYMMDD").
+        # Override with BRANDVOICE_ANALYSIS_MODEL if this default is deprecated or unavailable.
         analysis_model=os.environ.get("BRANDVOICE_ANALYSIS_MODEL", "claude-sonnet-4-6"),
         profile_reanalysis_threshold=int(
             os.environ.get(

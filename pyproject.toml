@@ -1,6 +1,6 @@
 [project]
 name = "brandvoice-mcp"
-version = "0.1.3"
+dynamic = ["version"]
 description = "An MCP server that learns your writing style and makes every AI client sound like you"
 readme = "README.md"
 license = { text = "MIT" }
@@ -37,6 +37,9 @@ brandvoice-mcp = "brandvoice_mcp.__main__:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/brandvoice_mcp/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 # Hatchling ships all files under this package directory, including
